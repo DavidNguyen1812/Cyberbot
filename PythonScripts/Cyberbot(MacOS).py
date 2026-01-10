@@ -999,7 +999,12 @@ async def checking_cyberbot_configuration(ctx):
             nonMonitoringChannels = "Non monitoring channels in this server are:\n"
             for nonMonitoringChannelID in CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)]:
                 nonMonitoringChannel = Cyberbot.get_channel(nonMonitoringChannelID)
-                nonMonitoringChannels += f"Channel ID: {nonMonitoringChannel.id}\tChannel name: {nonMonitoringChannel.name}\n"
+                if nonMonitoringChannel:
+                    nonMonitoringChannels += f"Channel ID: {nonMonitoringChannel.id}\tChannel name: {nonMonitoringChannel.name}\n"
+                else:
+                    CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)].remove(nonMonitoringChannelID)
+                    with open(CONFIGJSONFILEPATH, "w") as file:
+                        json.dump(CyberBotConfigData, file, indent=4)
             await ctx.followup.send(f"Automation scan mode for this server is {CyberBotConfigData["Automation-Mode"][str(ctx.guild.id)]}!\n"
                                     f"Silent scan mode for this server is {CyberBotConfigData["Silent-Mode"][str(ctx.guild.id)]}!\n{nonMonitoringChannels}")
             LoggingCommandBeingExecuted(ctx.user.name, f"/checking_cyberbot_status\nCommand Status: Approved")
@@ -1681,7 +1686,7 @@ async def phishing_email_scan(ctx, email_content: str, keep_output_secret: Liter
     AllenAIResult, AllenAIprobability = Prediction(email_content, AllenAItokenizer, AllenAIPhishingModel, "Phishing Emails")
     await ctx.followup.send(f"BERT-based Encoder-Transformer results:\n{'PHISHING' if BERTResult == 1 else 'SAFE'}\nConfidence: {BERTprobability * 100:.4f}%\n\n"
                             f"AllenAI-based Encoder-Transformer results:\n{'PHISHING' if  AllenAIResult == 1 else 'SAFE'}\nConfidence: {AllenAIprobability * 100:.4f}%\n\n"
-                            f"PLEASE NOTE that the transformers were only trained on emails written in English only with maximum 1000 tokens/words!")
+                            f"PLEASE NOTE that the transformers were only trained on emails written in English only with maximum 1500 tokens/words!")
 
 
 '''
@@ -1750,7 +1755,7 @@ async def on_message_edit(before, after):
             with open(CONFIGJSONFILEPATH, "w") as file:
                 json.dump(CyberBotConfigData, file, indent=4)
         if CyberBotConfigData["Automation-Mode"][str(after.guild.id)] == "True":
-            URLs = re.findall(r'https?://[^\s]+', after.content)
+            URLs = re.findall(r'https?://(?:(?!https?://)\S)+', after.content)
             if URLs:
                 print("Detecting URLs in Re-edited text content...")
                 if not CyberBotConfigData["Silent-Mode"][str(after.guild.id)] == "True":
@@ -1836,7 +1841,7 @@ async def on_message(message):
 
     if CyberBotConfigData["Automation-Mode"][str(message.guild.id)] == "True":
         if message.content:  # Check if the message text has at least 1 URL and Automation Mode is Enable!
-            URLs = re.findall(r'https?://[^\s]+', message.content)
+            URLs = re.findall(r'https?://(?:(?!https?://)\S)+', message.content)
             if URLs:
                 print("Detecting URLs in text content...")
                 if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
