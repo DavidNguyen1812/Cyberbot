@@ -196,7 +196,7 @@ def loadClassifierModel(modelPath, modelType, classificationTask, device='mps'):
             dim_feedforward=768,
             num_classes=2,
             dropout=0.1,
-            contextWindow=1000
+            contextWindow=1500
         )
 
     # Load weights
@@ -214,7 +214,7 @@ def Prediction(content, tokenizer, model, classificationTask, device='mps'):
     if classificationTask == "Password Strength":
         tokenizer.model_max_length = 30
     else:
-        tokenizer.model_max_length = 1000
+        tokenizer.model_max_length = 1500
     encoding = tokenizer(content, add_special_tokens=True, padding='max_length', return_tensors='pt', truncation=True)
     input_ids = encoding['input_ids'].to(device)
     attention_mask = encoding['attention_mask'].to(device)
