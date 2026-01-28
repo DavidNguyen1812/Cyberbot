@@ -108,6 +108,7 @@ ALLENAISPAMPATH = os.environ.get("ALLENSPAMPATH")
 """----API Tokens----"""
 BOTTOKEN = os.environ.get("CYBERBOTDISCORDAPI")
 virusTotalApiKey = os.environ.get("CYBERBOTVTKEY")
+KliphyAPI = os.environ.get("CYBERBOTKLIPHYAPI")
 
 """System Configuration"""
 rarfile.UNRAR_TOOL = "unar"
@@ -245,6 +246,16 @@ async def on_member_remove(member):
     with open(CONFIGJSONFILEPATH, "w") as file:
         json.dump(CyberBotConfigData, file, indent=4)
     await member.send(f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!")
+
+
+def isKlipyURLValid(gifURL):
+    gifSlug = os.path.basename(gifURL)
+    response = requests.get(f"https://api.klipy.com/api/v1/{KliphyAPI}/gifs/items?slugs={gifSlug}")
+    data = response.json()
+    if data["result"]:
+        gifURL = data["data"]["data"][0]["file"]["hd"]["gif"]["url"]
+        return gifURL
+    return "Invalid"
 
 
 def sendEmail(subject: str, content: str, receiver_email: str):
@@ -1801,18 +1812,31 @@ async def on_message_edit(before, after):
                         await after.delete()
                         return
                     else:
-                        try:
-                            testValidURLresponse = requests.get(url=url, headers=MAINHEADERS)
-                            if testValidURLresponse.status_code in range(400, 500):
-                                logScanSession(f"{time.ctime(time.time())}\nUser {after.author.name} re-edited message with URL {url} with status code: {testValidURLresponse.status_code}\n\n")
-                                print(f"Can not access URL {url}\nStatus Code: {testValidURLresponse.status_code}")
-                                await after.reply(f"Cyberbot can not access URL {url} with status code: {testValidURLresponse.status_code}",suppress_embeds=True)
+                        if url.startswith("https://klipy.com/gifs/"):
+                            print(f"URL {url} is a Klipy gif, getting the real gif URL...")
+                            klipyUrl = isKlipyURLValid(url)
+                            if klipyUrl != "Invalid":
+                                print(f"Klipy URL is valid!")
+                                URLs.append(klipyUrl)
                                 URLs.remove(url)
-                        except Exception as error:
-                            print(f"Can not access URL {url}\nError: {error}")
-                            logScanSession(f"{time.ctime(time.time())}\nUser {after.author.name} re-edited message with URL {url} with Error:\n{error}\n\n")
-                            await after.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
-                            URLs.remove(url)
+                            else:
+                                print(f"Klipy URL is invalid!")
+                                logScanSession(f"{time.ctime(time.time())}\nUser {after.author.name} sent Kliphy URL {url} that Cyberbot can not find the correct gif URL to access\n\n")
+                                await after.reply(f"Cyberbot cannot access URL {url}")
+                                URLs.remove(url)
+                        else:
+                            try:
+                                testValidURLresponse = requests.get(url=url, headers=MAINHEADERS)
+                                if testValidURLresponse.status_code in range(400, 500):
+                                    logScanSession(f"{time.ctime(time.time())}\nUser {after.author.name} re-edited message with URL {url} with status code: {testValidURLresponse.status_code}\n\n")
+                                    print(f"Can not access URL {url}\nStatus Code: {testValidURLresponse.status_code}")
+                                    await after.reply(f"Cyberbot can not access URL {url} with status code: {testValidURLresponse.status_code}",suppress_embeds=True)
+                                    URLs.remove(url)
+                            except Exception as error:
+                                print(f"Can not access URL {url}\nError: {error}")
+                                logScanSession(f"{time.ctime(time.time())}\nUser {after.author.name} re-edited message with URL {url} with Error:\n{error}\n\n")
+                                await after.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
+                                URLs.remove(url)
                 if URLs:
                     UrlScanResults = virusTotalURLScan(URLs)
                     for url in UrlScanResults:
@@ -1882,19 +1906,32 @@ async def on_message(message):
                         await message.delete()
                         return
                     else:
-                        try:
-                            testValidURLresponse = requests.get(url=url, headers=MAINHEADERS)
-                            if testValidURLresponse.status_code in range(400, 500):
-                                print(f"Can not access URL {url}\nStatus Code: {testValidURLresponse.status_code}")
-                                logScanSession(f"{time.ctime(time.time())}\nUser {message.author.name} sent URL {url} with status code: {testValidURLresponse.status_code}\n\n")
-                                print(f"URL {url} status code: {testValidURLresponse.status_code}")
-                                await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLresponse.status_code}", suppress_embeds=True)
+                        if url.startswith("https://klipy.com/gifs/"):
+                            print(f"URL {url} is a Klipy gif, getting the real gif URL...")
+                            klipyUrl = isKlipyURLValid(url)
+                            if klipyUrl != "Invalid":
+                                print(f"Klipy URL is valid!")
+                                URLs.append(klipyUrl)
                                 URLs.remove(url)
-                        except Exception as error:
-                            print(f"Can not access URL {url}\nError: {error}")
-                            logScanSession(f"{time.ctime(time.time())}\nUser {message.author.name} sent URL {url} with Error:\n{error}\n\n")
-                            await message.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
-                            URLs.remove(url)
+                            else:
+                                print(f"Klipy URL is invalid!")
+                                logScanSession(f"{time.ctime(time.time())}\nUser {message.author.name} sent Kliphy URL {url} that Cyberbot can not find the correct gif URL to access\n\n")
+                                await message.reply(f"Cyberbot cannot access URL {url}")
+                                URLs.remove(url)
+                        else:
+                            try:
+                                testValidURLresponse = requests.get(url=url, headers=MAINHEADERS)
+                                if testValidURLresponse.status_code in range(400, 500):
+                                    print(f"Can not access URL {url}\nStatus Code: {testValidURLresponse.status_code}")
+                                    logScanSession(f"{time.ctime(time.time())}\nUser {message.author.name} sent URL {url} with status code: {testValidURLresponse.status_code}\n\n")
+                                    print(f"URL {url} status code: {testValidURLresponse.status_code}")
+                                    await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLresponse.status_code}", suppress_embeds=True)
+                                    URLs.remove(url)
+                            except Exception as error:
+                                print(f"Can not access URL {url}\nError: {error}")
+                                logScanSession(f"{time.ctime(time.time())}\nUser {message.author.name} sent URL {url} with Error:\n{error}\n\n")
+                                await message.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
+                                URLs.remove(url)
                 if URLs:
                     UrlScanResults = virusTotalURLScan(URLs)
                     for url in UrlScanResults:
