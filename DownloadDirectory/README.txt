@@ -1,0 +1,1 @@
+This is the temp directory for Cyberbot to temporary download all the files locally to analyze!

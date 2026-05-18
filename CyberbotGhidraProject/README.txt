@@ -1,0 +1,1 @@
+This is the temp directory for Cyberbot Ghidra project to be created during the Ghidra decompilation process!
