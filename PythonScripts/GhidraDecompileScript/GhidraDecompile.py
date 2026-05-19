@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import os
 from ghidra.app.decompiler import DecompInterface
 from ghidra.util.task import ConsoleTaskMonitor
 
