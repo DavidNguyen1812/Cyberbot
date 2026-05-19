@@ -53,7 +53,10 @@ OperatingSystem = "MacOS" # Set this to the OS that the bot is running on
 
 
 print("Checking Essential System Binaries")
-systembinaries = ["7z", "qemu-img", "semgrep", "hdiutil"]
+if OperatingSystem == "MacOS":
+    systembinaries = ["7z", "qemu-img", "semgrep", "hdiutil"]
+else:
+    systembinaries = ["7z", "qemu-img", "semgrep"]
 for systembinary in systembinaries:
     result = subprocess.run(["which", systembinary], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if f"{result.stderr}{result.stdout}":
