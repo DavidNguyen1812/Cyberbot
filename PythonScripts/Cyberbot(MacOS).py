@@ -415,7 +415,7 @@ async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
                         dailyTotalCost += row["Total Cost"]
                 monthlyTotalInputToken.append(dailyTotalInputToken)
                 monthlyTotalOutputToken.append(dailyTotalOutputToken)
-                monthlyTotalCost.append(dailyTotalCost)
+                monthlyTotalCost.append(round(dailyTotalCost, 5))
             datasets = [
                 {"values": monthlyTotalInputToken, "title": "Total Input Tokens", "color": "Blue"},
                 {"values": monthlyTotalOutputToken, "title": "Total Output Tokens", "color": "Green"},
@@ -469,7 +469,7 @@ async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
                         monthlyTotalCost += row["Total Cost"]
                 monthlyTotalInputTokens.append(monthlyTotalInputToken)
                 monthlyTotalOutputTokens.append(monthlyTotalOutputToken)
-                monthlyTotalCosts.append(monthlyTotalCost)
+                monthlyTotalCosts.append(round(monthlyTotalCost, 5))
             datasets = [
                 {"values": monthlyTotalInputTokens, "title": "Total Input Tokens", "color": "Blue"},
                 {"values": monthlyTotalOutputTokens, "title": "Total Output Tokens", "color": "Green"},
@@ -2726,7 +2726,7 @@ async def on_message(message):
                             else:
                                 logMessage += "VIRUS TOTAL SCAN: Error\n"
                                 print(f"VirusTotal can not scan the attachment!")
-                                
+
                             if RootFileTrueExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
                                 print("Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
                                 FileUncompressedSize = await asyncio.to_thread(ArchivesDiskImagesBombAnalysisAndExtraction,[filePath], mountPoint)
