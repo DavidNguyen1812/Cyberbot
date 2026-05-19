@@ -13,23 +13,22 @@ from dotenv import load_dotenv
 from email.message import EmailMessage
 from io import BytesIO
 from openai import AsyncOpenAI
-from google import genai  # Need pip install google-genai
-from fpdf import FPDF # Need pip install fpdf
-from transformers import BertTokenizer, LongformerTokenizer # Need pip install transformers
+from google import genai
+from fpdf import FPDF
+from transformers import BertTokenizer, LongformerTokenizer
 from EncoderTransformers import loadClassifierModel, Prediction
 from aiocsv import AsyncWriter
 from zoneinfo import ZoneInfo
 from urllib.parse import unquote
-# Need brew install qemu-utils
 
 import subprocess
 import json
 import zipfile
 import tarfile
 import gzip
-import rarfile  # Need pip install rarfile and brew install unar
+import rarfile
 import bz2
-import lzma  # Need brew install qemu libguestfs
+import lzma
 import filetype
 import magic
 import mimetypes
@@ -43,26 +42,72 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 
-
+runprogram = True
 
 """This version following DAC access control, where each member can have admin account with Cyberbot granted by the Server Owner"""
 
 load_dotenv()
 
+"""Operating System Configuration"""
+OperatingSystem = "MacOS" # Set this to the OS that the bot is running on
+
+
+print("Checking Essential System Binaries")
+systembinaries = ["7z", "qemu-img", "semgrep", "hdiutil"]
+for systembinary in systembinaries:
+    result = subprocess.run(["which", systembinary], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if f"{result.stderr}{result.stdout}":
+        if "not found" in f"{result.stderr} {result.stdout}":
+            raise ModuleNotFoundError(f"Missing system binary {systembinary} NOT FOUND. Please install the system binary via brew or compiled the source code for Cyberbot to function")
+        else:
+            print(f"System binary {systembinary} FOUND.")
+    else:
+        raise ModuleNotFoundError(f"Missing system binary {systembinary} NOT FOUND. Please install the system binary via brew or compiled the source code for Cyberbot to function")
+
+"""Python Dependencies Check"""
+print("Checking Python Dependencies")
+dependencies = ["discord-py", "dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep"]
+for dependency in dependencies:
+    result = subprocess.run(["pip", "show", dependency], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if "not found" in f"{result.stderr} {result.stdout}":
+        raise ModuleNotFoundError(f"Python dependency {dependency} NOT FOUND. Please install the dependency via pip in order for Cyberbot to function")
+    else:
+        print(f"Python dependency {dependency} FOUND.")
+
+"""Ghidra Configuration"""
+GHIDRAPROJECTPATH = os.environ.get("GHIDRAPROJECTPATH")
+GHIDRAPROJECTNAME = os.environ.get("GHIDRAPROJECTNAME")
+GHIDRA_INSTALL_DIR = os.environ.get("GHIDRA_INSTALL_DIR")
+GHIDRAHEADLESS = f"{GHIDRA_INSTALL_DIR}/support/analyzeHeadless"
+GHIDRASCRIPTPATH = os.environ.get("GHIDRASCRIPTPATH")
+JEPLIBPATH = os.environ.get("JEPLIBPATH")
+
+"""Checking Ghidra and GhidraThon Installed Properly"""
+print("Checking Ghidra and Ghidrathon installation")
+if os.path.exists(GHIDRA_INSTALL_DIR):
+    print(f"Ghidra FOUND.")
+    if os.path.exists(os.path.join(GHIDRA_INSTALL_DIR, "Ghidra", "Extensions", "Ghidrathon")):
+        print(f"Ghidrathon extension FOUND.")
+    else:
+        raise ModuleNotFoundError(f"Ghidrathon extension NOT FOUND. Please install Ghidrathon extension following the instruction in the README.md!")
+else:
+    raise ModuleNotFoundError(f"Ghidra NOT FOUND. Please install Ghidra following the instruction in the README.md!")
+
 """Define all file extensions Cyberbot will scan"""
 ARCHIVEFILEFORMATS = (".zip", ".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lzma", ".tgz", ".tbz2", ".txz", ".gz",
-                         ".rar", ".bz2", ".xz", ".lzma")
+                      ".rar", ".bz2", ".xz", ".lzma")
 
 DISKIMAGEANDARCHIVEFORMATS = (".dmg", ".iso", ".img", ".vhd", ".nrg", ".vhdx", ".vmdk", ".qcow", ".qcow2", ".udf",
-                                 ".zip", ".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lzma", ".tgz", ".tbz2", ".txz",
-                                 ".gz", ".rar", ".bz2", ".xz", ".lzma")
+                              ".zip", ".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lzma", ".tgz", ".tbz2", ".txz",
+                              ".gz", ".rar", ".bz2", ".xz", ".lzma")
+
 ENCRYPTEDFILEFORMATS = (".enc", ".aes", ".pgp", ".gpg", ".vault")
 
 EXECUTABLEFORMATS = ("Mach-O executable", "ELF executable", ".exe", ".dll", ".dex", ".jar", ".bin")
 
 SCRIPTFILEFORMATS = (".sh", ".zsh", "ASCII document or script files", ".txt", ".c")
 
-DOCUMENTFILEFORMATS = (".pdf",  ".docx", ".doc")
+DOCUMENTFILEFORMATS = (".pdf", ".docx", ".doc")
 
 PICTUREFORMATS = (".jpg", ".png", ".jpeg", ".raw", ".bmp", ".webp", ".tiff", ".tif", ".ico", ".icns", ".avif", ".odd",
                   ".heic", ".svg", ".eps", ".gif", ".ps", ".psd")
@@ -86,7 +131,8 @@ MALISCIOUSSIGNATUREPATH = os.environ.get("CYBERBOTMALICIOUSSIGNATURES")
 SCATLOG = os.environ.get("CYBERBOTSCATLOGS")
 SCANLOG = os.environ.get("CYBERBOTSCANLOGS")
 CRONTASKLOG = os.environ.get("CYBERBOTCRONTASKLOG")
-MAINHEADERS = {'User-Agent': 'Mozilla / 5.0(Windows NT 10.0; Win64; x64) AppleWebKit / 537.36(KHTML, likeGecko) Chrome / 142.0.0.0 Safari / 537.36'}
+MAINHEADERS = {
+    'User-Agent': 'Mozilla / 5.0(Windows NT 10.0; Win64; x64) AppleWebKit / 537.36(KHTML, likeGecko) Chrome / 142.0.0.0 Safari / 537.36'}
 BERTPHISHINGPATH = os.environ.get("BERTPHISHINGPATH")
 ALLENAIPHISHINGPATH = os.environ.get("ALLENAIPHISHINGPATH")
 BERTPASSWORDPATH = os.environ.get("BERTPASSWORDPATH")
@@ -124,7 +170,7 @@ labels = {
             "2": "Social Email",
             "3": "Promotion Email",
             "4": "Finance Email"
-    }
+        }
 }
 
 GPTclient = AsyncOpenAI(api_key=os.environ.get("CYBERBOTGPTKEY"))
@@ -132,19 +178,19 @@ GeminiClient = genai.Client()
 GPTMODEL = "gpt-5.3-codex"
 GEMINIMODEL = "gemini-3.1-pro-preview"
 LLMMODELINFORMATION = {
-                        GEMINIMODEL:
-                            {
-                                "Maximum Input Tokens": 1048576,
-                                "Cost": {"Input Token": [2, 4], "Output Token": [12, 18]},
-                                "TPM": 2000000
-                            },
-                        GPTMODEL:
-                            {
-                                "Maximum Input Tokens": 400000,
-                                "Cost": {"Input Token": [1.75, 1.75], "Output Token": [14, 14]},
-                                "TPM": 500000
-                            }
-                      }
+    GEMINIMODEL:
+        {
+            "Maximum Input Tokens": 1048576,
+            "Cost": {"Input Token": [2, 4], "Output Token": [12, 18]},
+            "TPM": 2000000
+        },
+    GPTMODEL:
+        {
+            "Maximum Input Tokens": 400000,
+            "Cost": {"Input Token": [1.75, 1.75], "Output Token": [14, 14]},
+            "TPM": 500000
+        }
+}
 LLMModels = [GPTMODEL, GEMINIMODEL]
 
 """Loading Pre-Trained Tokenizer Models"""
@@ -164,6 +210,8 @@ BERTSpamModel = loadClassifierModel(BERTSPAMPATH, "BERT", "Spam Emails")
 ALLENAISpamModel = loadClassifierModel(ALLENAISPAMPATH, "Allen AI", "Spam Emails")
 
 """Initialize aiohttp.ClientSession in setUpHook"""
+
+
 class CyberBot(commands.Bot):
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
@@ -172,6 +220,8 @@ class CyberBot(commands.Bot):
     async def close(self):
         await super().close()
         await self.session.close()
+
+
 Cyberbot = CyberBot(command_prefix='/', intents=intents)
 
 """Initializing asyncio locks for Thread-Safe File I/O to prevent race conditions"""
@@ -196,13 +246,6 @@ if not os.path.exists(f"{LLMUSAGELOGDIR}{previousYear}"):
 if not os.path.exists(f"{LLMUSAGELOGDIR}{previousYear}/{previousMonth}"):
     os.mkdir(f"{LLMUSAGELOGDIR}{previousYear}/{previousMonth}")
 
-"""Ghidra Configuration"""
-GHIDRAPROJECTPATH = os.environ.get("GHIDRAPROJECTPATH")
-GHIDRAPROJECTNAME = os.environ.get("GHIDRAPROJECTNAME")
-GHIDRA_INSTALL_DIR = os.environ.get("GHIDRA_INSTALL_DIR")
-GHIDRAHEADLESS = f"{GHIDRA_INSTALL_DIR}/support/analyzeHeadless"
-GHIDRASCRIPTPATH = os.environ.get("GHIDRASCRIPTPATH")
-JEPLIBPATH = os.environ.get("JEPLIBPATH")
 
 def plotBarCharts(datasets: list[dict], xLabels: list[str], suptitle: str, savePath: str) -> None:
     """
@@ -237,7 +280,8 @@ def plotBarCharts(datasets: list[dict], xLabels: list[str], suptitle: str, saveP
         ax.tick_params(axis="x", length=0)
         for bar, val in zip(bars, values):
             if val > 0:
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_v * 0.015, f"{val:,}", ha="center", va="bottom", fontsize=7.5, color="#333", fontweight="500")
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_v * 0.015, f"{val:,}", ha="center",
+                        va="bottom", fontsize=7.5, color="#333", fontweight="500")
         for i, val in enumerate(values):
             if val == 0:
                 ax.axvspan(i - barWidth / 2, i + barWidth / 2, color="#E8E8E8", alpha=0.5, zorder=1)
@@ -259,7 +303,8 @@ def plotModelCalls(LLMModelUses: list[int], savePath: str):
     fig, ax = plt.subplots(figsize=(10, 7))
     fig.patch.set_facecolor("#F7F8FA")
 
-    bars = ax.bar(LLMModels, LLMModelUses, width=0.55, color="Purple", alpha=0.88, edgecolor="white", linewidth=0.8, zorder=3)
+    bars = ax.bar(LLMModels, LLMModelUses, width=0.55, color="Purple", alpha=0.88, edgecolor="white", linewidth=0.8,
+                  zorder=3)
     ax.set_facecolor("#F7F8FA")
     ax.set_title("LLM Model Calls", fontsize=13, fontweight="bold", color="#1E2A3A", pad=8, loc="left")
     ax.set_xticks(x)
@@ -274,7 +319,8 @@ def plotModelCalls(LLMModelUses: list[int], savePath: str):
     ax.tick_params(axis="x", length=0)
     for bar, val in zip(bars, LLMModelUses):
         if val > 0:
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_val * 0.015,f"{val:,}", ha="center", va="bottom", fontsize=7.5, color="#333", fontweight="500")
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_val * 0.015, f"{val:,}", ha="center",
+                    va="bottom", fontsize=7.5, color="#333", fontweight="500")
 
     for i, val in enumerate(LLMModelUses):
         if val == 0:
@@ -286,7 +332,7 @@ def plotModelCalls(LLMModelUses: list[int], savePath: str):
 
 async def writingLLMUsageCsv(csvPath: str, mode: Literal['w', 'a'], data: list, ObjectLock: asyncio.locks.Lock) -> None:
     """
-    Description: Executing read and write only operation on the csv files related to logging Samson LLM Usage
+    Description: Executing read and write only operation on the csv files related to logging Cyberbot LLM Usage
     :param csvPath: The path to the csv file
     :param mode: Must be 'w' or 'a'
     :param data: The data to write
@@ -300,18 +346,24 @@ async def writingLLMUsageCsv(csvPath: str, mode: Literal['w', 'a'], data: list, 
 
 
 def calculateUsageCost(model: str, totalInputTokens: int, totalOutputTokens: int) -> float:
-   """
-   Description: Calculate the usage cost of the LLM model based on the total input tokens and output tokens.
-   :param model: LLM Model
-   :param totalInputTokens: The total input tokens of a prompt
-   :param totalOutputTokens: The total output tokens of a prompt
-   :return: The final calculated usage cost
-   """
-   totalCost = (totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0] + (totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0]
-   return round(totalCost, 5)
+    """
+    Description: Calculate the usage cost of the LLM model based on the total input tokens and output tokens.
+    :param model: LLM Model
+    :param totalInputTokens: The total input tokens of a prompt
+    :param totalOutputTokens: The total output tokens of a prompt
+    :return: The final calculated usage cost
+    """
+    totalCost = (totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0] + (
+                totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0]
+    return round(totalCost, 5)
 
 
-async def CronTaskLog(logData: str):
+async def CronTaskLog(logData: str) -> None:
+    """
+    Description: Logging Cyberbot Cron Task Job Results
+    :param logData: The log data to write
+    :return: None
+    """
     async with CronTaskLock:
         async with aiofiles.open(CRONTASKLOG, "a") as logFile:
             await logFile.write(logData)
@@ -345,14 +397,15 @@ async def checking_member_can_kick_cyberbot():
             guild = Cyberbot.get_guild(serverID)
             member = guild.get_member(account["User ID"])
             if guild.me.top_role.position < member.top_role.position and member.id != guild.owner.id:
-                await guild.owner.send(f"Member {member.name} from the server {guild.name} ID {serverID} that you owned can kick Cyberbot. Please make sure Cyberbot has a higher role than all the members in the server.")
-                print(f"Member {member.name} can kick Cyberbot from server {guild.name} ID {serverID}. Warning was sent to server owner")
+                await guild.owner.send(
+                    f"Member {member.name} from the server {guild.name} ID {serverID} that you owned can kick Cyberbot. Please make sure Cyberbot has a higher role than all the members in the server.")
+                print(
+                    f"Member {member.name} can kick Cyberbot from server {guild.name} ID {serverID}. Warning was sent to server owner")
     # print("Process finished!\n\n")
 
 
 @tasks.loop(time=datetime.time(hour=0, minute=0, tzinfo=ZoneInfo("America/New_York")))  # A task every new day
 async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
-
     global previousYear, previousMonth, previousDate
 
     try:
@@ -363,12 +416,14 @@ async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
             if time.time() >= account["Credential Expiration Age"]:
                 print(f"Password for {account["User Email"]} expired.")
                 if await asyncio.to_thread(sendEmail, "Cyberbot admin account password expired",
-                             f"Your current admin account password has expired!\n"
-                             f"Please use command /request_password_reset_token and /change_password in the DM channel with Cyberbot to update your password!\n",
-                             account["User Email"]) == "Email sent successfully!":
-                    await CronTaskLog(f"Password for {account["User Email"]} expired. Notification Email successfully sent!\n")
+                                           f"Your current admin account password has expired!\n"
+                                           f"Please use command /request_password_reset_token and /change_password in the DM channel with Cyberbot to update your password!\n",
+                                           account["User Email"]) == "Email sent successfully!":
+                    await CronTaskLog(
+                        f"Password for {account["User Email"]} expired. Notification Email successfully sent!\n")
                 else:
-                    await CronTaskLog(f"Password for {account["User Email"]} expired. Notification Email sent FAILURE!\n")
+                    await CronTaskLog(
+                        f"Password for {account["User Email"]} expired. Notification Email sent FAILURE!\n")
         print(f"Process Finished!\n\n")
         await CronTaskLog("Status: Success\n\n")
     except Exception as e:
@@ -422,7 +477,8 @@ async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
                 {"values": monthlyTotalCost, "title": "Total Cost ($)", "color": "Orange"},
             ]
             dates = [str(date) for date in range(1, int(currentTime[2]) + 1)]
-            plotBarCharts(datasets, dates, "LLM Usage - Monthly Overview",f"{LLMUSAGELOGDIR}{previousYear}/{previousMonth}/LLMMonthlyUsageReport.png")
+            plotBarCharts(datasets, dates, "LLM Usage - Monthly Overview",
+                          f"{LLMUSAGELOGDIR}{previousYear}/{previousMonth}/LLMMonthlyUsageReport.png")
             print(f"Successfully Updating LLMMonthlyUsageReport.png!")
             await CronTaskLog("Status: Success\n\n")
 
@@ -475,14 +531,17 @@ async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
                 {"values": monthlyTotalOutputTokens, "title": "Total Output Tokens", "color": "Green"},
                 {"values": monthlyTotalCosts, "title": "Total Cost ($)", "color": "Orange"},
             ]
-            plotBarCharts(datasets, months, "LLM Usage - End of Year Overview",f"{LLMUSAGELOGDIR}{previousYear}/FullYearUsageReport.png")
+            plotBarCharts(datasets, months, "LLM Usage - End of Year Overview",
+                          f"{LLMUSAGELOGDIR}{previousYear}/FullYearUsageReport.png")
             print(f"Successfully Generating LLM Usage Yearly Report!")
             await CronTaskLog("Status: Success\n\n")
 
             try:
                 print(f"Resetting LLMYearlyUsage.csv...")
                 await CronTaskLog("Cron Task: RESETTING LLMYearlyUsage.csv\n")
-                await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "w",["Date", "Total Input Tokens", "Total Output Tokens", "LLM Models", "Total Cost"], YearlyCSVLock)
+                await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "w",
+                                         ["Date", "Total Input Tokens", "Total Output Tokens", "LLM Models",
+                                          "Total Cost"], YearlyCSVLock)
                 print(f"Successfully resetting LLMYearlyUsage.csv!")
                 await CronTaskLog("Status: Success\n\n")
 
@@ -514,7 +573,9 @@ async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
         try:
             print(f"Resetting LLMMonthlyUsage.csv...")
             await CronTaskLog("Cron Task: RESETTING LLMMonthlyUsage.csv\n")
-            await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "w",["Date", "Total Input Tokens", "Total Output Tokens", "LLM Models", "Total Cost"], MonthlyCSVLock)
+            await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "w",
+                                     ["Date", "Total Input Tokens", "Total Output Tokens", "LLM Models", "Total Cost"],
+                                     MonthlyCSVLock)
             print(f"Successfully resetting LLMMonthlyUsage.csv!")
             await CronTaskLog("Status: Success\n\n")
             try:
@@ -555,27 +616,35 @@ async def on_ready():
 
 @Cyberbot.event
 async def on_member_join(member):
-    print(f"New member {member.name} joined {member.guild.name}\nAdding new member to user file scan process file...\n\n")
+    print(
+        f"New member {member.name} joined {member.guild.name}\nAdding new member to user file scan process file...\n\n")
 
 
 @Cyberbot.event
 async def on_member_remove(member):
-    print(f"Member {member.name} left server {member.guild.name} ID {member.guild.id}\nRemoving member admin access and session from the server...\n\n")
+    print(
+        f"Member {member.name} left server {member.guild.name} ID {member.guild.id}\nRemoving member admin access and session from the server...\n\n")
     for admin in CyberBotConfigData["Admins"]:
         if admin["User ID"] == member.id:
             admin["Accessible Servers"].remove(member.guild.id)
             if str(member.guild.id) in admin["Current Admin Session Period"]:
                 del admin["Current Admin Session Period"][str(member.guild.id)]
-            await asyncio.to_thread(sendEmail,"Admin access to Discord Server Removed",
-                      f"Your Cyberbot admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!",
-                      admin["User Email"])
+            await asyncio.to_thread(sendEmail, "Admin access to Discord Server Removed",
+                                    f"Your Cyberbot admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!",
+                                    admin["User Email"])
     async with ConfigLock:
         async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
             await file.write(json.dumps(CyberBotConfigData, indent=4))
-    await member.send(f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!")
+    await member.send(
+        f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!")
 
 
-async def isKlipyURLValid(gifURL):
+async def isKlipyURLValid(gifURL: str) -> str:
+    """
+    Description: Kliphy URL validation
+    :param gifURL: The Kliphy URL to check
+    :return: The correct Kliphy URL or Invalid if URL is not a tenor URL
+    """
     try:
         gifSlug = os.path.basename(gifURL)
         gifURL = f"https://api.klipy.com/api/v1/{KliphyAPI}/gifs/items?slugs={gifSlug}"
@@ -612,9 +681,16 @@ async def isTenorURLValid(gifURL: str) -> str:
         return "Invalid"
 
 
-def sendEmail(subject: str, content: str, receiver_email: str):
+def sendEmail(subject: str, content: str, receiver_email: str) -> str:
+    """
+    Description: Sending email to registered user with admin account
+    :param subject: Email subject
+    :param content: Email content
+    :param receiver_email: Destination email address
+    :return: Email sent status of either failed or successed
+    """
     # Credit https://www.youtube.com/watch?v=g_j6ILT-X0k
-    sender_email = "noreplycyberbot7777@gmail.com"
+    sender_email = "noreplycyberbot7777@gmail.com"  # You need to create a your own google account for Cyberbot
 
     # Create a multipart message and set headers
     email = EmailMessage()
@@ -638,28 +714,44 @@ def sendEmail(subject: str, content: str, receiver_email: str):
     return "Email sent successfully!"
 
 
-async def LoggingCommandBeingExecuted(userName: str, command: str):
+async def LoggingCommandBeingExecuted(userName: str, command: str) -> None:
+    """
+    DescriptionL Logging an event a user calling Cyberbot application command on Discord
+    :param userName: User Discord username
+    :param command: The application command being called
+    :return: None
+    """
     async with CommandLogLock:
         async with aiofiles.open(CYBERBOTCOMMANDLOG, "a") as logFile:
             await logFile.write(f"{time.ctime(time.time())}")
             await logFile.write(f"\n{userName} used command {command}\n\n")
 
 
-async def randomPasswordGenerator():
+async def randomPasswordGenerator() -> str:
+    """
+    Description: Randomly generate a secure password.
+    :return: A secure password following a defined Cyberbot password policy
+    """
     # Must be 12 length minimum
     # Must have mixed characters and numbers
     # Letters must have mixed case
     # Contains the following special characters !@#$%&*_+=
     char = f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+="
     password = ""
-    while None in [re.search(r'[a-z]', password), re.search(r'[A-Z]', password), re.search(r'\d', password), re.search(r'[!@#$%&*_+=]', password)]:
+    while None in [re.search(r'[a-z]', password), re.search(r'[A-Z]', password), re.search(r'\d', password),
+                   re.search(r'[!@#$%&*_+=]', password)]:
         password = ""
         for i in range(random.randint(12, 20)):
             password += random.choice(char)
     return password
 
 
-async def GeminiCheckCommonPassword(password: str):
+async def GeminiCheckCommonPassword(password: str) -> bool:
+    """
+    Description: Checking password strength using Gemini
+    :param password: Password to be checked
+    :return: True if the password is not secure, else False
+    """
     response = await GeminiClient.aio.models.generate_content(
         model="gemini-3.1-pro-preview",
         contents=f"Only say True if {password} seems to be from commonly used passwords, otherwise say False"
@@ -670,8 +762,12 @@ async def GeminiCheckCommonPassword(password: str):
     cMonth = time.ctime(time.time()).split()[1]
     cDay = time.ctime(time.time()).split()[2]
     totalCost = calculateUsageCost(GEMINIMODEL, inputPromptTokenCount, outputPromptTokenCount)
-    await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",[f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINIMODEL, totalCost], MonthlyCSVLock)
-    await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINIMODEL, totalCost], YearlyCSVLock)
+    await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",
+                             [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINIMODEL,
+                              totalCost], MonthlyCSVLock)
+    await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",
+                             [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINIMODEL,
+                              totalCost], YearlyCSVLock)
 
     if response.text.startswith(("True", "true")):
         return True
@@ -679,7 +775,12 @@ async def GeminiCheckCommonPassword(password: str):
         return False
 
 
-async def CheckPasswordPwned(password: str):
+async def CheckPasswordPwned(password: str) -> bool:
+    """
+    Description: Checking if password already exist in breached password database
+    :param password: Password to be checked
+    :return: True if the passwod already been breached, else False
+    """
     # Reference: https://haveibeenpwned.com/API/v3
 
     sha1Signature = hashlib.sha1(password.encode()).hexdigest().upper()
@@ -697,6 +798,12 @@ async def CheckPasswordPwned(password: str):
 
 
 async def checkingRealFileExtension(BytesContent: bytes, filename: str) -> str:
+    """
+    Description: Checking for the file extension based on their bytes content using magic bytes detection, filetype, and python-magic
+    :param BytesContent: The file byte contemt
+    :param filename: File name
+    :return: The detected file extension or can not detect
+    """
     print("Checking file extension with Python-Magic module...")
     mime = magic.from_buffer(BytesContent, mime=True)
     fileExt = mimetypes.guess_extension(mime)
@@ -714,7 +821,8 @@ async def checkingRealFileExtension(BytesContent: bytes, filename: str) -> str:
                 if b'conectix' in last512Bytes:
                     print(f"Detected file extension .vhd")
                     return ".vhd"
-                if b'koly' in last512Bytes or last512Bytes.startswith(b'EFI PART') or BytesContent.startswith(b'EFI PART'):
+                if b'koly' in last512Bytes or last512Bytes.startswith(b'EFI PART') or BytesContent.startswith(
+                        b'EFI PART'):
                     print(f"Detected file extension .dmg")
                     return ".dmg"
         if fileExt == ".webm" and filename.endswith(".weba"):
@@ -735,7 +843,12 @@ async def checkingRealFileExtension(BytesContent: bytes, filename: str) -> str:
         if fileExt == ".asf" and filename.endswith(".wma"):
             print(f"Detected file extension .wma")
             return ".wma"
-        print(f"Detected file extension {fileExt}")
+        if fileExt.endswith((".xz", ".bz2", ".gz")) and filename.endswith(
+                (".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz")):
+            fileExt = f".{'.'.join(filename.split(".")[1:])}"
+            print(f"Detected extension {fileExt}")
+        else:
+            print(f"Detected file extension {fileExt}")
         return fileExt
     else:
         print("python-magic could not determined, manually checking based on pre-defined list...")
@@ -781,71 +894,121 @@ async def checkingRealFileExtension(BytesContent: bytes, filename: str) -> str:
     return "Can't be determined"
 
 
-async def openAISCAT(filepath: str, prompt: str):
+async def openAISCAT(filepath: str) -> str:
+    """
+    Description: Static Code Analysis on a script or decompiled file with OpenAI
+    :param filepath: The filepath of the file to analyze
+    :return: The analysis results from OpenAI
+    """
     async with aiofiles.open(filepath, "rb") as PDFfile:
-        fileResponse = await GPTclient.files.create(file=(f"{FILEDOWNLOADCOUNTER}.pdf", await PDFfile.read()), purpose="assistants")
+        fileResponse = await GPTclient.files.create(file=(f"{FILEDOWNLOADCOUNTER}.pdf", await PDFfile.read()),
+                                                    purpose="assistants")
         fileID = fileResponse.id
-
-    inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}])).input_tokens
+    prompt = (f"# ASK:\n"
+              f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
+              f"# RESPONSE FORMAT:\n"
+              f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+    inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL,
+                                                                          instructions="You are a cybersecurity analyst on a file for potential malware detection",
+                                                                          input=[{"role": "user", "content": [
+                                                                              {"type": "input_text", "text": prompt},
+                                                                              {"type": "input_file",
+                                                                               "file_id": fileID}]}])).input_tokens
     print(f"Total Input Tokens: {inputPromptTokenCount}")
-    if inputPromptTokenCount > LLMMODELINFORMATION[GPTMODEL]["Maximum Input Tokens"] or inputPromptTokenCount > LLMMODELINFORMATION[GPTMODEL]["TPM"]:
+    if inputPromptTokenCount > LLMMODELINFORMATION[GPTMODEL]["Maximum Input Tokens"] or inputPromptTokenCount > \
+            LLMMODELINFORMATION[GPTMODEL]["TPM"]:
         print(f"MAXIMUM TOKEN LIMIT!!")
         await GPTclient.files.delete(fileID)
         async with ScatLogLock:
             async with aiofiles.open(SCATLOG, "a") as logfile:
-                await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
+                await logfile.write(
+                    f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
         return "MAXIMUM TOKEN LIMIT"
     else:
-        response = await GPTclient.responses.create(model=GPTMODEL, instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}])
+        response = await GPTclient.responses.create(model=GPTMODEL,
+                                                    instructions="You are a cybersecurity analyst on a file for potential malware detection",
+                                                    input=[{"role": "user",
+                                                            "content": [{"type": "input_text", "text": prompt},
+                                                                        {"type": "input_file", "file_id": fileID}]}])
         await GPTclient.files.delete(fileID)
         outputPromptTokenCount = response.usage.total_tokens - inputPromptTokenCount
         print(f"Total Output Tokens: {outputPromptTokenCount}")
         cMonth = time.ctime(time.time()).split()[1]
         cDay = time.ctime(time.time()).split()[2]
         totalCost = calculateUsageCost(GPTMODEL, inputPromptTokenCount, outputPromptTokenCount)
-        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",[f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], MonthlyCSVLock)
-        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",[f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], YearlyCSVLock)
+        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",
+                                 [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL,
+                                  totalCost], MonthlyCSVLock)
+        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",
+                                 [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL,
+                                  totalCost], YearlyCSVLock)
         async with ScatLogLock:
             async with aiofiles.open(SCATLOG, "a") as logfile:
-                await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: {response.output_text}\nTotal Output Tokens: {outputPromptTokenCount}\n\n\n")
+                await logfile.write(
+                    f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: {response.output_text}\nTotal Output Tokens: {outputPromptTokenCount}\n\n\n")
         return response.output_text
 
 
-async def GeminiSCAT(filepath: str, prompt: str):
+async def GeminiSCAT(filepath: str):
+    """
+    Description: Static Code Analysis on a script or decompiled file with Google Gemini
+    :param filepath: The filepath of the file to analyze
+    :return: The analysis results from Gemini
+    """
     uploadedFile = await GeminiClient.aio.files.upload(file=filepath)
     print(f"Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
-    prompts = [uploadedFile, prompt]
+    mainPrompt = (f"# ROLE:\n"
+                  f"You are a cybersecurity analyst on a file for potential malware detection\n"
+                  f"# ASK:\n"
+                  f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
+                  f"# RESPONSE FORMAT:\n"
+                  f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+    prompts = [uploadedFile, mainPrompt]
     try:
-        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
+        totalInputTokenCount = (
+            await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
     except Exception as error:
         print(f"Received error: {error}\nAttempting upload original source file")
         uploadedFile = await GeminiClient.aio.files.upload(file=filepath.replace(".pdf", ".txt"))
         print(f"Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
-        prompts = [uploadedFile, prompt]
-        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
+        prompts = [uploadedFile, mainPrompt]
+        totalInputTokenCount = (
+            await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
     print(f"Total Input Tokens: {totalInputTokenCount}")
-    if totalInputTokenCount > LLMMODELINFORMATION[GEMINIMODEL]["Maximum Input Tokens"] or totalInputTokenCount > LLMMODELINFORMATION[GEMINIMODEL]["TPM"]:
+    if totalInputTokenCount > LLMMODELINFORMATION[GEMINIMODEL]["Maximum Input Tokens"] or totalInputTokenCount > \
+            LLMMODELINFORMATION[GEMINIMODEL]["TPM"]:
         print(f"MAXIMUM TOKEN LIMIT!!")
         async with ScatLogLock:
             async with aiofiles.open(SCATLOG, "a") as logfile:
-                await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
+                await logfile.write(
+                    f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
         return "MAXIMUM TOKEN LIMIT"
     else:
         response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompts)
         totalOutputTokenCount = response.usage_metadata.total_token_count - totalInputTokenCount
-        print(f"Total Output Tokens: {totalInputTokenCount}")
+        print(f"Total Output Tokens: {totalOutputTokenCount}")
         cMonth = time.ctime(time.time()).split()[1]
         cDay = time.ctime(time.time()).split()[2]
         totalCost = calculateUsageCost(GEMINIMODEL, totalInputTokenCount, totalOutputTokenCount)
-        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",[f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINIMODEL, totalCost], MonthlyCSVLock)
-        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",[f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINIMODEL, totalCost], YearlyCSVLock)
+        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",
+                                 [f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINIMODEL,
+                                  totalCost], MonthlyCSVLock)
+        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",
+                                 [f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINIMODEL,
+                                  totalCost], YearlyCSVLock)
         async with ScatLogLock:
             async with aiofiles.open(SCATLOG, "a") as logfile:
-                await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: {response.text}\nTotal Output Tokens: {totalOutputTokenCount}\n\n\n")
+                await logfile.write(
+                    f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: {response.text}\nTotal Output Tokens: {totalOutputTokenCount}\n\n\n")
         return response.text
 
 
 async def virusTotalURLScan(url: str) -> str:
+    """
+    Description: Performing URL scan via Virus Total API
+    :param url: URL to be analyzed
+    :return: Virus Total Analysis Result
+    """
     HostUrl = "https://www.virustotal.com/api/v3/urls"
     headers = {
         'x-apikey': virusTotalApiKey,
@@ -858,7 +1021,7 @@ async def virusTotalURLScan(url: str) -> str:
             scanID = data["data"]["id"]
             AnalysisUrl = f'https://www.virustotal.com/api/v3/analyses/{scanID}'
             for attempt in range(10):
-                async with Cyberbot.session.get(AnalysisUrl,headers=headers, timeout=15) as analysisResponse:
+                async with Cyberbot.session.get(AnalysisUrl, headers=headers, timeout=15) as analysisResponse:
                     if analysisResponse.status != 200:
                         print("Error getting Analysis Results")
                         return "URL can't be scanned"
@@ -868,7 +1031,7 @@ async def virusTotalURLScan(url: str) -> str:
                     if status == "completed":
                         return f"Malicious counted:{analysis["data"]["attributes"]["stats"]['malicious']}"
 
-                print(f"[*] Scan for {url} not finished yet (status={status}), retrying in {15}s...")
+                print(f"[Virus Total] Scan for {url} not finished yet (status={status}), retrying in {15}s...")
                 await asyncio.sleep(15)
             else:
                 return "URL can't be scanned"
@@ -877,7 +1040,12 @@ async def virusTotalURLScan(url: str) -> str:
             return "URL can't be scanned"
 
 
-async def virusTotalFileScan(filePath: str):
+async def virusTotalFileScan(filePath: str) -> str:
+    """
+    Description: Performing file scan via Virus Total API
+    :param filePath: Path to the file to be analyzed
+    :return: Virus Total Analysis Result
+    """
     HostUrl = "https://www.virustotal.com/api/v3/files"
     headers = {
         'x-apikey': virusTotalApiKey
@@ -892,7 +1060,7 @@ async def virusTotalFileScan(filePath: str):
             data = await response.json()
             analysisId = data["data"]["id"]
             AnalysisUrl = f'https://www.virustotal.com/api/v3/analyses/{analysisId}'
-            for attempt in range(10):
+            for attempt in range(15):
                 async with Cyberbot.session.get(AnalysisUrl, headers=headers, timeout=15) as analysisResponse:
                     if analysisResponse.status != 200:
                         print("Error getting Analysis Results")
@@ -903,13 +1071,16 @@ async def virusTotalFileScan(filePath: str):
                     if status == "completed":
                         stats = analysis["data"]["attributes"]["stats"]
                         print(
-                            f"[+] Scan complete for {filePath}: "
+                            f"[Virus Total] Scan complete for {filePath}: "
                             f"{stats['malicious']} malicious, {stats['suspicious']} suspicious, "
                             f"{stats['harmless']} harmless, {stats['undetected']} undetected."
                         )
-                        return f"{stats['malicious']}:{stats['suspicious']}:{stats['harmless']}:{stats['undetected']}"
-
-                print(f"[*] Scan for file {os.path.basename(filePath)} not finished yet (status={status}), retrying in {15}s...")
+                        malicious = stats["malicious"] if stats["malicious"] else 0
+                        suspicious = stats['suspicious'] if stats['suspicious'] else 0
+                        harmless = stats['harmless'] if stats['harmless'] else 0
+                        undetected = stats['undetected'] if stats['undetected'] else 0
+                        return f"{malicious}:{suspicious}:{harmless}:{undetected}"
+                print(f"[Virus Total] Scan for file {os.path.basename(filePath)} not finished yet (status={status}), retrying in {15}s...")
                 await asyncio.sleep(15)
             return "File can't be scanned"
         else:
@@ -917,7 +1088,15 @@ async def virusTotalFileScan(filePath: str):
             return "File can't be scanned"
 
 
-def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str, archiveLayer=0):
+def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str, archiveLayer=0) -> str:
+    """
+    Description: Performing a safe extraction of compressed content inside archive or disk images
+    :param filePath: A list of the archive/disk image path
+    :param mountPoint: The main directory to extract the compressed content
+    :param archiveLayer: Keep track of how many nested archive/disk layers
+    :return: The summary of the extraction
+    """
+
     def checkingFileExtension(fileContent: bytes, fname: str, verbose: bool = True):
         mime = magic.from_buffer(fileContent, mime=True)
         Ext = mimetypes.guess_extension(mime)
@@ -927,13 +1106,18 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                     if verbose:
                         print(f"Detected file extension .zip")
                     return '.zip'
+                elif fileContent.startswith(b'caff'):
+                    if verbose:
+                        print(f"Detected file extension .caf")
+                    return '.caf'
                 elif len(fileContent) > 512:
                     Last512bytes = fileContent[-512:]
                     if b'conectix' in Last512bytes:
                         if verbose:
                             print(f"Detected file extension .vhd")
                         return '.vhd'
-                    elif b'koly' in Last512bytes or Last512bytes.startswith(b'EFI PART') or fileContent.startswith(b'EFI PART'):
+                    elif b'koly' in Last512bytes or Last512bytes.startswith(b'EFI PART') or fileContent.startswith(
+                            b'EFI PART'):
                         if verbose:
                             print(f"Detected file extension .dmg")
                         return '.dmg'
@@ -965,7 +1149,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                 if verbose:
                     print(f"Detected file extension .wma")
                 return ".wma"
-            if Ext.endswith((".xz", ".bz2", ".gz")) and fname.endswith((".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz")):
+            if Ext.endswith((".xz", ".bz2", ".gz")) and fname.endswith(
+                    (".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz")):
                 Ext = f".{'.'.join(fname.split(".")[1:])}"
                 if verbose:
                     print(f"Detected extension {Ext}")
@@ -974,6 +1159,16 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                     print(f"Python-Magic detect file extension {Ext}")
             return Ext
         else:
+            if fileContent.startswith(
+                    (b'\xfe\xed\xfa\xce', b'\xce\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xcf\xfa\xed\xfe',
+                     b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca')):
+                if verbose:
+                    print("File extension is Mach-O executable!")
+                return "Mach-O executable"
+            if fileContent.startswith(b'\x7f\x45\x4c\x46'):
+                if verbose:
+                    print("File extension is ELF (Executable and Linkable Format)!")
+                return "ELF executable"
             if fileContent.startswith(b'QFI\xfb'):
                 if verbose:
                     print(f"Detected file extension .qcow2")
@@ -986,10 +1181,11 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                 if verbose:
                     print(f"Detected file extension .vmdk")
                 return ".vmdk"
-            elif fileContent[32768:32768 + 5].startswith((b"NSR02", b"NSR03")):
-                if verbose:
-                    print(f"Detected file extension .udf")
-                return '.udf'
+            elif len(fileContent) >= 32768:
+                if fileContent[32768:32768 + 5].startswith((b"NSR02", b"NSR03")):
+                    if verbose:
+                        print(f"Detected file extension .udf")
+                    return '.udf'
             else:
                 if verbose:
                     print(f"Python-Magic did not detect")
@@ -1045,7 +1241,7 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
             if not fileExt.endswith(ARCHIVEFILEFORMATS):
                 print(f"Scanning disk image file: {os.path.basename(filePath[i])} at path {filePath[i]}...")
                 TempDiskMountPoint = f"{DOWNLOADINGDIRPATH}{os.path.basename(filePath[i]).split('.')[0]}MountPoint{random.randint(1, 100000)}/"
-                if fileExt.endswith((".dmg", ".img", ".udf")):
+                if fileExt.endswith((".dmg", ".img", ".udf")) and OperatingSystem == "MacOS":
                     print("Disk image in .dmg, .img, and .udf category")
                     print("Checking if disk image is encrypted...")
                     checkEncryptedDiskfile = subprocess.run(["hdiutil", "isencrypted", filePath[i]], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -1062,9 +1258,12 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                             print(f"Failed to mount disk image {os.path.basename(filePath[i])}")
                             return "Disk Image Error!"
                         print(f"Extracting content in mount point {TempDiskMountPoint} to main scan directory...")
-                elif fileExt.endswith((".iso", ".nrg", ".vhd", ".vhdx", ".qcow2", ".vmdk", ".qcow")):
-                    if fileExt.endswith((".iso", ".nrg")):
-                        print("Disk image in .iso and .nrg category")
+                elif fileExt.endswith((".iso", ".nrg", ".vhd", ".vhdx", ".qcow2", ".vmdk", ".qcow", ".dmg", ".img", ".udf")):
+                    if (fileExt.endswith((".iso", ".nrg")) and OperatingSystem == "MacOS") or (fileExt.endswith((".iso", ".nrg", ".dmg", ".img", ".udf")) and OperatingSystem == "Linux"):
+                        if OperatingSystem == "MacOS":
+                            print("Disk image in .iso and .nrg category")
+                        else:
+                            print("Disk image is in .img, .iso, .nrg, .dmg, and .udf category!")
                         print("Checking if disk image is encrypted...")
                         checkEncryptedDiskfile = subprocess.run(["7z", "l", filePath[i]], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                         checkEncryptedDiskfile = checkEncryptedDiskfile.stdout + checkEncryptedDiskfile.stderr
@@ -1086,7 +1285,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                             RawFilePath = f"{DOWNLOADINGDIRPATH}{os.path.basename(filePath[i]).split('.')[0]}.img"
                             print(f"Converting disk format to raw .img disk format using qemu-img...")
                             try:
-                                subprocess.run(["qemu-img", "convert", "-O", "raw", filePath[i], RawFilePath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                                subprocess.run(["qemu-img", "convert", "-O", "raw", filePath[i], RawFilePath],
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
                             except subprocess.CalledProcessError:
                                 print("Failed to convert disk to raw format using qemu-img")
                                 return "Disk Image Error!"
@@ -1096,7 +1296,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                     os.mkdir(TempDiskMountPoint)
                     print(f"Extracting the disk content using  7z command...")
                     try:
-                        subprocess.run(["7z", "x", filePath[i], f"-o{TempDiskMountPoint}", "-y"], stdout=subprocess.DEVNULL, check=True)
+                        subprocess.run(["7z", "x", filePath[i], f"-o{TempDiskMountPoint}", "-y"],
+                                       stdout=subprocess.DEVNULL, check=True)
                         print(f"Content extracted to temp mount point {TempDiskMountPoint}")
                     except subprocess.CalledProcessError:
                         print(f"Failed to extract content from disk image {filePath[i]}\n")
@@ -1109,28 +1310,29 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                             fileData = source.read()
                             hashedData = hashlib.sha256(fileData).hexdigest()
                         if not hashedData in DuplicatedFileDetection:
-                            if not filename.startswith("._") and "__MACOSX" not in filepath and not ".DS_Store" in filename:
-                                if checkingFileExtension(fileData).endswith(CYBERBOTSCOPEOFORMATS):
+                            if not filename.startswith(
+                                    "._") and "__MACOSX" not in filepath and not ".DS_Store" in filename:
+                                if checkingFileExtension(fileData, filename).endswith(CYBERBOTSCOPEOFORMATS):
                                     shutil.copy(filepath, mountPoint)
                                     print(f"{filename} is written from path {filepath} to path {mountPoint}{filename}!")
                             DuplicatedFileDetection.append(hashedData)
                         else:
                             totalDuplicatedFile += 1
-                            if checkingFileExtension(fileData).endswith(DISKIMAGEANDARCHIVEFORMATS):
+                            if checkingFileExtension(fileData, filename).endswith(DISKIMAGEANDARCHIVEFORMATS):
                                 totalDuplicatedArchive += 1
                                 print(f"Duplicated archive/disk file at path {filepath}")
                                 if totalDuplicatedArchive >= DUPLICATEDARCHIVELIMIT:
                                     return "Potential Recursive Archive Bomb Attack!"
                             else:
                                 print(f"Duplicated file at path {filepath}")
-                if fileExt.endswith((".dmg", "img", ".udf")):
+                        if totalFileCount // (totalDuplicatedFile + 1) <= 0.10:
+                            return "Too many duplicated files!"
+                if fileExt.endswith((".dmg", "img", ".udf")) and OperatingSystem == "MacOS":
                     print(f"Unmounting temp mount point {TempDiskMountPoint}...")
                     subprocess.run(['hdiutil', 'detach', TempDiskMountPoint])
                 else:
                     print(f"Removing temp mount point {TempDiskMountPoint}...")
                     shutil.rmtree(TempDiskMountPoint)
-                if totalFileCount // (totalDuplicatedFile + 1) <= 0.10:
-                    return "Too many duplicated files!"
             else:
                 print(f"Scanning Archive file: {os.path.basename(filePath[i])} at path {filePath[i]}...")
                 if fileExt.endswith(".zip"):
@@ -1142,10 +1344,12 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                             totalFileCount += 1
                             DestinationPath = os.path.abspath(f"{mountPoint}{entry.filename}")
                             if not DestinationPath.startswith(mountPoint):
-                                print(f"The uncompressed file name {entry.filename} formed an illegal path {DestinationPath} to cause directory transversal attack!")
+                                print(
+                                    f"The uncompressed file name {entry.filename} formed an illegal path {DestinationPath} to cause directory transversal attack!")
                                 return "Path Transversal Attack"
-                            if "__MACOSX" not in DestinationPath and not os.path.basename(DestinationPath).startswith("._") and not ".DS_Store" in entry.filename:
-                                if entry.filename.endswith('/') :
+                            if "__MACOSX" not in DestinationPath and not os.path.basename(DestinationPath).startswith(
+                                    "._") and not ".DS_Store" in entry.filename:
+                                if entry.filename.endswith('/'):
                                     os.makedirs(DestinationPath, exist_ok=True)
                                     print(f"Directory {entry.filename} created at path {DestinationPath}")
                             if totalFileCount // (totalDuplicatedFile + 1) <= 0.10:
@@ -1171,7 +1375,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                         if uncompressedSize >= UNCOMPRESSEDSIZELIMIT:
                                             print(f"The total uncompressed size has reached the limit threshold!")
                                             return "Potential Archive Bomb!"
-                                if "__MACOSX" not in DestinationPath and not os.path.basename(DestinationPath).startswith("._") and not ".DS_Store" in entry.filename:
+                                if "__MACOSX" not in DestinationPath and not os.path.basename(
+                                        DestinationPath).startswith("._") and not ".DS_Store" in entry.filename:
                                     if checkingFileExtension(fileData, DestinationPath).endswith(CYBERBOTSCOPEOFORMATS):
                                         hashedData = hashlib.sha256(fileData).hexdigest()
                                         if hashedData not in DuplicatedFileDetection:
@@ -1181,7 +1386,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                             DuplicatedFileDetection.append(hashedData)
                                         else:
                                             totalDuplicatedFile += 1
-                                            if checkingFileExtension(fileData, DestinationPath).endswith(DISKIMAGEANDARCHIVEFORMATS):
+                                            if checkingFileExtension(fileData, DestinationPath).endswith(
+                                                    DISKIMAGEANDARCHIVEFORMATS):
                                                 totalDuplicatedArchive += 1
                                                 print(f"Duplicated archive/disk file at path {DestinationPath}")
                                                 if totalDuplicatedArchive >= DUPLICATEDARCHIVELIMIT:
@@ -1212,9 +1418,11 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                             totalFileCount += 1
                             DestinationPath = os.path.abspath(f"{mountPoint}{entry.name}")
                             if not DestinationPath.startswith(mountPoint):
-                                print(f"The uncompressed file name {entry.name} formed an illegal path {DestinationPath} to cause directory transversal attack!")
+                                print(
+                                    f"The uncompressed file name {entry.name} formed an illegal path {DestinationPath} to cause directory transversal attack!")
                                 return "Path Transversal Attack"
-                            if "__MACOSX" not in DestinationPath and not os.path.basename( DestinationPath).startswith("._") and not ".DS_Store" in entry.name:
+                            if "__MACOSX" not in DestinationPath and not os.path.basename(DestinationPath).startswith(
+                                    "._") and not ".DS_Store" in entry.name:
                                 if "." not in entry.name:
                                     os.makedirs(DestinationPath, exist_ok=True)
                                     print(f"Directory {entry.name} created at path {DestinationPath}")
@@ -1241,8 +1449,10 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                         if uncompressedSize >= UNCOMPRESSEDSIZELIMIT:
                                             print(f"The total uncompressed size has reached the limit threshold!")
                                             return "Potential Archive Bomb!"
-                                    if "__MACOSX" not in DestinationPath and not os.path.basename( DestinationPath).startswith("._") and not ".DS_Store" in entry.name:
-                                        if checkingFileExtension(fileData, DestinationPath).endswith(CYBERBOTSCOPEOFORMATS):
+                                    if "__MACOSX" not in DestinationPath and not os.path.basename(
+                                            DestinationPath).startswith("._") and not ".DS_Store" in entry.name:
+                                        if checkingFileExtension(fileData, DestinationPath).endswith(
+                                                CYBERBOTSCOPEOFORMATS):
                                             hashedData = hashlib.sha256(fileData).hexdigest()
                                             if hashedData not in DuplicatedFileDetection:
                                                 with open(DestinationPath, 'wb') as f:
@@ -1251,7 +1461,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                                 DuplicatedFileDetection.append(hashedData)
                                             else:
                                                 totalDuplicatedFile += 1
-                                                if checkingFileExtension(fileData).endswith(DISKIMAGEANDARCHIVEFORMATS):
+                                                if checkingFileExtension(fileData, DestinationPath).endswith(
+                                                        DISKIMAGEANDARCHIVEFORMATS):
                                                     totalDuplicatedArchive += 1
                                                     print(f"Duplicated archive/disk file at path {DestinationPath}")
                                                     if totalDuplicatedArchive >= DUPLICATEDARCHIVELIMIT:
@@ -1281,9 +1492,11 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                 return "Encrypted Error"
                             DestinationPath = os.path.abspath(f"{mountPoint}{entry.filename}")
                             if not DestinationPath.startswith(mountPoint):
-                                print(f"The uncompressed file name {entry.filename} formed an illegal path {DestinationPath} to cause directory transversal attack!")
+                                print(
+                                    f"The uncompressed file name {entry.filename} formed an illegal path {DestinationPath} to cause directory transversal attack!")
                                 return "Path Transversal Attack"
-                            if "__MACOSX" not in DestinationPath and not os.path.basename(DestinationPath).startswith("._") and not ".DS_Store" in entry.filename:
+                            if "__MACOSX" not in DestinationPath and not os.path.basename(DestinationPath).startswith(
+                                    "._") and not ".DS_Store" in entry.filename:
                                 if entry.filename.endswith('/'):
                                     os.makedirs(DestinationPath, exist_ok=True)
                                     print(f"Directory {entry.filename} created at path {DestinationPath}")
@@ -1310,7 +1523,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                         if uncompressedSize >= UNCOMPRESSEDSIZELIMIT:
                                             print(f"The total uncompressed size has reached the limit threshold!")
                                             return "Potential Archive Bomb!"
-                                if "__MACOSX" not in DestinationPath and not os.path.basename(DestinationPath).startswith("._") and not ".DS_Store" in entry.filename:
+                                if "__MACOSX" not in DestinationPath and not os.path.basename(
+                                        DestinationPath).startswith("._") and not ".DS_Store" in entry.filename:
                                     if checkingFileExtension(fileData, DestinationPath).endswith(CYBERBOTSCOPEOFORMATS):
                                         hashedData = hashlib.sha256(fileData).hexdigest()
                                         if hashedData not in DuplicatedFileDetection:
@@ -1320,7 +1534,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                             DuplicatedFileDetection.append(hashedData)
                                         else:
                                             totalDuplicatedFile += 1
-                                            if checkingFileExtension(fileData).endswith(DISKIMAGEANDARCHIVEFORMATS):
+                                            if checkingFileExtension(fileData, DestinationPath).endswith(
+                                                    DISKIMAGEANDARCHIVEFORMATS):
                                                 totalDuplicatedArchive += 1
                                                 print(f"Duplicated archive/disk file at path {DestinationPath}")
                                                 if totalDuplicatedArchive >= DUPLICATEDARCHIVELIMIT:
@@ -1344,7 +1559,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                         fileName = os.path.basename(filePath[i]).rsplit(fileExt, 1)[0]
                         DestinationPath = os.path.abspath(f"{mountPoint}{fileName}")
                         if not DestinationPath.startswith(mountPoint):
-                            print(f"The uncompressed file name {fileName} formed an illegal path {DestinationPath} to cause directory transversal attack!")
+                            print(
+                                f"The uncompressed file name {fileName} formed an illegal path {DestinationPath} to cause directory transversal attack!")
                             return "Path Transversal Attack"
                         fileData = b''
                         if fileExt.endswith(".bz2"):
@@ -1416,7 +1632,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                 if fileExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
                     print(f"Found nested {fileExt} Archive/Image file {filename} at path {filepath}")
                     if os.path.getsize(filepath) >= NESTEDARCHIVESIZELIMIT:
-                        print(f"The nested file {filename} size is {os.path.getsize(filepath)}. The number is too large, thus, hinted potential archive bomb!")
+                        print(
+                            f"The nested file {filename} size is {os.path.getsize(filepath)}. The number is too large, thus, hinted potential archive bomb!")
                         return "Potential Archive Bomb!"
                     filePath.append(filepath)
     uncompressedSize = str(uncompressedSize)
@@ -1432,7 +1649,22 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
     return f"{betterFormat}|{totalDuplicatedFile}"
 
 
-async def checkingCleanData(hashedData: str, category: Literal["Archive/Disk File", "Executable/Compiled Files", "Script Files", "Document/PDF Files", "Audio Files", "Image Files", "Video Files", "All Extension", "URLs"]):
+def uncompressedFileStructure(path: str, indent=""):
+    name = os.path.basename(path)
+    result = ""
+    if os.path.isdir(path):
+        result += f"{indent}{name} (Directory)\n"
+        for entry in sorted(os.listdir(path)):
+            fullPath = os.path.join(path, entry)
+            result += uncompressedFileStructure(fullPath, indent + "\t\t")
+    else:
+        result += f"{indent}{name} (File)\n"
+
+    return result
+
+
+async def checkingCleanData(hashedData: str, category: Literal[
+    "Archive/Disk File", "Executable/Compiled Files", "Script Files", "Document/PDF Files", "Audio Files", "Image Files", "Video Files", "All Extension", "URLs"]):
     async with CleanSignatureLock:
         async with aiofiles.open(CLEANSIGNATURESPATH, "r") as file:
             cleanHashedData = json.loads(await file.read())
@@ -1446,7 +1678,8 @@ async def checkingCleanData(hashedData: str, category: Literal["Archive/Disk Fil
     return False
 
 
-async def checkingFlaggedMaliciousData(hashedData: str, category: Literal["Archive/Disk File", "Executable/Compiled Files", "Script Files", "Document/PDF Files", "Audio Files", "Image Files", "Video Files", "All Extension", "URLs"]):
+async def checkingFlaggedMaliciousData(hashedData: str, category: Literal[
+    "Archive/Disk File", "Executable/Compiled Files", "Script Files", "Document/PDF Files", "Audio Files", "Image Files", "Video Files", "All Extension", "URLs"]):
     async with MaliciousSignatureLock:
         async with aiofiles.open(MALISCIOUSSIGNATUREPATH, "r") as file:
             maliciousHashedData = json.loads(await file.read())
@@ -1469,7 +1702,7 @@ async def addingHashedData(hashedData: str, fileExt, malicious: bool, fileCatego
                   "Image Files": PICTUREFORMATS,
                   "Video Files": VIDEOFORMATS,
                   "URLs": "URLs"
-                }
+                  }
     for category in fileExtMap:
         if fileExt in fileExtMap[category]:
             fileCategory = category
@@ -1477,7 +1710,7 @@ async def addingHashedData(hashedData: str, fileExt, malicious: bool, fileCatego
     if malicious:
         async with MaliciousSignatureLock:
             async with aiofiles.open(MALISCIOUSSIGNATUREPATH, "r") as file:
-              currentMaliciousData = json.loads(await file.read())
+                currentMaliciousData = json.loads(await file.read())
             currentMaliciousData[fileCategory].append(hashedData)
             async with aiofiles.open(MALISCIOUSSIGNATUREPATH, "w") as file:
                 await file.write(json.dumps(currentMaliciousData, indent=4))
@@ -1505,13 +1738,15 @@ def ghidraDecompile(filepath: str, mountPoint: str, filename: str) -> str:
     env["DYLD_LIBRARY_PATH"] = JEPLIBPATH
 
     cmd = [
-        GHIDRAHEADLESS, # Calling the Ghidra analyzeHeadless program
-        GHIDRAPROJECTPATH, # Ghidra project folder to create a temp project
-        GHIDRAPROJECTNAME, # Ghidra project name
-        "-import", filepath, # Importing the binary file to be decompiled
-        "-scriptPath", GHIDRASCRIPTPATH, # The directory that contain the Python script contains the decompilation instructions to be execute by Ghidrathon
-        "-postScript", "GhidraDecompile.py", outputFile, # The name of the Python script contains the decompilation instructions
-        "-deleteProject", # Delete the temp project after decompilation
+        GHIDRAHEADLESS,  # Calling the Ghidra analyzeHeadless program
+        GHIDRAPROJECTPATH,  # Ghidra project folder to create a temp project
+        GHIDRAPROJECTNAME,  # Ghidra project name
+        "-import", filepath,  # Importing the binary file to be decompiled
+        "-scriptPath", GHIDRASCRIPTPATH,
+        # The directory that contain the Python script contains the decompilation instructions to be execute by Ghidrathon
+        "-postScript", "GhidraDecompile.py", outputFile,
+        # The name of the Python script contains the decompilation instructions
+        "-deleteProject",  # Delete the temp project after decompilation
     ]
 
     print(f"Running Ghidra headless on: {filepath}")
@@ -1580,13 +1815,16 @@ async def checking_cyberbot_configuration(ctx):
                         async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                             await file.write(json.dumps(CyberBotConfigData, indent=4))
 
-            await ctx.followup.send(f"Automation scan mode for this server is {CyberBotConfigData["Automation-Mode"][str(ctx.guild.id)]}!\n"
-                                    f"Silent scan mode for this server is {CyberBotConfigData["Silent-Mode"][str(ctx.guild.id)]}!\n{nonMonitoringChannels}")
+            await ctx.followup.send(
+                f"Automation scan mode for this server is {CyberBotConfigData["Automation-Mode"][str(ctx.guild.id)]}!\n"
+                f"Silent scan mode for this server is {CyberBotConfigData["Silent-Mode"][str(ctx.guild.id)]}!\n{nonMonitoringChannels}")
             await LoggingCommandBeingExecuted(ctx.user.name, f"/checking_cyberbot_status\nCommand Status: Approved")
             return
 
-    await LoggingCommandBeingExecuted(ctx.user.name, f"/checking_cyberbot_status\nCommand Status: Denied/User does not have admin account access to the server!")
-    await ctx.followup.send(f"Your admin account is not permitted to access in this server, please contact the server owner {ctx.guild.owner.name} to give you admin account access to the server!")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/checking_cyberbot_status\nCommand Status: Denied/User does not have admin account access to the server!")
+    await ctx.followup.send(
+        f"Your admin account is not permitted to access in this server, please contact the server owner {ctx.guild.owner.name} to give you admin account access to the server!")
     print(f"User {ctx.user.name} does not have admin account access to the server!\n\n")
 
 
@@ -1596,16 +1834,17 @@ async def checking_cyberbot_configuration(ctx):
 )
 async def list_supported_formats(ctx):
     await ctx.response.send_message("Cyberbot can scan the following file formats:\n\n"
-                              "Archive and Disk Image: .dmg, .iso, .img, .vhd, .nrg, .vhdx, .vmdk, .qcow, .qcow2, .udf,"
-                              " .zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .tar.lzma, .tgz, .tbz2, .txz, .gz, .rar, .bz2, .xz, .lzma\n\n"
-                              "Executable: Mach-O executable (All architecture), ELF executable, Windows exe and dll, .dex, .jar\n\n"
-                              "Script Files: BASH script, ZShell and all common programming scripts\n\n"
-                              "Document Files: .txt, .pdf, .docx\n\n"
-                              "Media Files: .jpg, .png, .jpeg, .raw, .bmp, .webp, .tiff, .tif, .ico, .icns, .avif, .odd, .heic, "
-                              ".svg, .eps, .gif, .ps, .psd, .mp4, .mov, .mkv, .avi, .m4v, .flv, .mpeg, .mpg, .ts, .wmv, .3gp, .3g2,"
-                              ".3gpp, .cavs, .dv, .dvr, .mod, .mts, .m2ts, .mxf, .rm, .rmvb, .swf, .vob, .ogv, .mp3, .wav, .oga, .m4a,"
-                              " .flac, .weba, .aac, .ac3, .aif, .aiff, .aifc, .amr, .au, .caf, .dss, .m4a, .m4b, .wma, .opus, .webm, .ogg"
-                              )
+                                    "Archive and Disk Image: .dmg, .iso, .img, .vhd, .nrg, .vhdx, .vmdk, .qcow, .qcow2, .udf,"
+                                    " .zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .tar.lzma, .tgz, .tbz2, .txz, .gz, .rar, .bz2, .xz, .lzma\n\n"
+                                    "Executable: Mach-O executable (All architecture), ELF executable, Windows exe and dll, .dex, .jar\n\n"
+                                    "Script Files: BASH script, ZShell and all common programming scripts\n\n"
+                                    "Document Files: .txt, .pdf, .docx\n\n"
+                                    "Media Files: .jpg, .png, .jpeg, .raw, .bmp, .webp, .tiff, .tif, .ico, .icns, .avif, .odd, .heic, "
+                                    ".svg, .eps, .gif, .ps, .psd, .mp4, .mov, .mkv, .avi, .m4v, .flv, .mpeg, .mpg, .ts, .wmv, .3gp, .3g2,"
+                                    ".3gpp, .cavs, .dv, .dvr, .mod, .mts, .m2ts, .mxf, .rm, .rmvb, .swf, .vob, .ogv, .mp3, .wav, .oga, .m4a,"
+                                    " .flac, .weba, .aac, .ac3, .aif, .aiff, .aifc, .amr, .au, .caf, .dss, .m4a, .m4b, .wma, .opus, .webm, .ogg"
+                                    )
+
 
 @Cyberbot.tree.command(
     name="get_list_of_accessible_servers",
@@ -1620,11 +1859,13 @@ async def get_list_of_accessible_servers(ctx):
             for serverID in admin["Accessible Servers"]:
                 guild = Cyberbot.get_guild(serverID)
                 serverList += f"Server Name: {guild.name}\tServer ID: {serverID}\tServer Owner: {guild.owner.name}\n"
-            await LoggingCommandBeingExecuted(ctx.user.name,f"/get_list_of_accessible_servers\nCommand Status: Approved/Accessible Servers list sent to user!")
+            await LoggingCommandBeingExecuted(ctx.user.name,
+                                              f"/get_list_of_accessible_servers\nCommand Status: Approved/Accessible Servers list sent to user!")
             await ctx.followup.send(f"Your Cyberbot admin account has access to the following servers:\n{serverList}")
             print(f"Process Finished!\n\n")
             return
-    await LoggingCommandBeingExecuted(ctx.user.name, f"/get_list_of_accessible_servers\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/get_list_of_accessible_servers\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
     await ctx.followup.send(f"{ctx.user.name} does not have a Cyberbot admin account yet!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
@@ -1644,21 +1885,24 @@ async def create_admin_account(ctx, user_email: str):
     for admin in CyberBotConfigData["Admins"]:
         if admin["User ID"] == ctx.user.id:
             accountExist = True
-            await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Denied/User already has an admin account!")
-            await ctx.followup.send(f"You already have a Cyberbot admin account associated with email address {admin['User Email']}\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!")
+            await LoggingCommandBeingExecuted(ctx.user.name,
+                                              f"/create_admin_account\nCommand Status: Denied/User already has an admin account!")
+            await ctx.followup.send(
+                f"You already have a Cyberbot admin account associated with email address {admin['User Email']}\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!")
             print("User already has an admin account!\n\n")
             break
         if admin["User Email"] == user_email:
             emailTaken = True
-            await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Denied/Email address already taken by other admin account!")
+            await LoggingCommandBeingExecuted(ctx.user.name,
+                                              f"/create_admin_account\nCommand Status: Denied/Email address already taken by other admin account!")
             await ctx.followup.send(f"The email address already associated with a different admin account!")
             print("Email address already associated with a different admin account!\n\n")
             break
     if not accountExist and not emailTaken:
         defaultPassword = await randomPasswordGenerator()
-        if await asyncio.to_thread(sendEmail,"New Cyberbot Admin Account Created",
-                     f"A new Cyberbot admin account was created with a default password:\n{defaultPassword}\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!",
-                     user_email) == "Email sent successfully!":
+        if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created",
+                                   f"A new Cyberbot admin account was created with a default password:\n{defaultPassword}\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!",
+                                   user_email) == "Email sent successfully!":
             CyberBotConfigData["Admins"].append(
                 {"User ID": ctx.user.id,
                  "User Email": user_email,
@@ -1679,11 +1923,14 @@ async def create_admin_account(ctx, user_email: str):
             async with ConfigLock:
                 async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                     await file.write(json.dumps(CyberBotConfigData, indent=4))
-            await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Approved/New admin account registered for user {ctx.user.name}")
-            await ctx.followup.send(f"A new admin account has been created for you! Please check the email you used to registered the account for more details!")
+            await LoggingCommandBeingExecuted(ctx.user.name,
+                                              f"/create_admin_account\nCommand Status: Approved/New admin account registered for user {ctx.user.name}")
+            await ctx.followup.send(
+                f"A new admin account has been created for you! Please check the email you used to registered the account for more details!")
             print(f"New Admin account created for user {ctx.user.name}\n\n")
         else:
-            await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Denied/Error sending email!")
+            await LoggingCommandBeingExecuted(ctx.user.name,
+                                              f"/create_admin_account\nCommand Status: Denied/Error sending email!")
             await ctx.followup.send(f"Cyberbot can't register a new admin account with the email address: {user_email}")
             print(f"Error sending email!\n\n")
 
@@ -1701,39 +1948,49 @@ async def adding_admins(ctx, member: discord.Member):
     await ctx.response.defer(ephemeral=True)
     if ctx.user.id == ctx.guild.owner.id:
         if ctx.guild.me.top_role.position < member.top_role.position and member.id != ctx.guild.owner.id:
-            await LoggingCommandBeingExecuted(ctx.user.name, f"/adding_admins {member}\nCommand Status: Denied/Member {member.name} can kick Cyberbot out of the server {ctx.guild.name}")
-            await ctx.followup.send(f"{member.name} can kick Cyberbot out of the server! Therefore their admin account will not be allowed to work in the server! The reason is if their discord account is compromised, the attacker can kick Cyberbot out and does not need to be an admin to disable Cyberbot scan protection! Please ensure that Cyberbot always has the highest role than all the members in the server!")
+            await LoggingCommandBeingExecuted(ctx.user.name,
+                                              f"/adding_admins {member}\nCommand Status: Denied/Member {member.name} can kick Cyberbot out of the server {ctx.guild.name}")
+            await ctx.followup.send(
+                f"{member.name} can kick Cyberbot out of the server! Therefore their admin account will not be allowed to work in the server! The reason is if their discord account is compromised, the attacker can kick Cyberbot out and does not need to be an admin to disable Cyberbot scan protection! Please ensure that Cyberbot always has the highest role than all the members in the server!")
             print(f"{member.name} can kick Cyberbot out of the server {ctx.guild.name}\n\n")
         else:
             for admin in CyberBotConfigData["Admins"]:
                 if admin["User ID"] == member.id:
                     if ctx.guild.id not in admin["Accessible Servers"]:
-                        if await asyncio.to_thread(sendEmail,"New Accessible Server Added",
-                                     f"The owner {ctx.user.name} of server {ctx.guild.name} with server ID {ctx.guild.id} has granted your Cyberbot Admin Account access to the server",
-                                     admin["User Email"]) == "Email sent successfully!":
+                        if await asyncio.to_thread(sendEmail, "New Accessible Server Added",
+                                                   f"The owner {ctx.user.name} of server {ctx.guild.name} with server ID {ctx.guild.id} has granted your Cyberbot Admin Account access to the server",
+                                                   admin["User Email"]) == "Email sent successfully!":
                             admin["Accessible Servers"].append(ctx.guild.id)
                             async with ConfigLock:
                                 async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                                     await file.write(json.dumps(CyberBotConfigData, indent=4))
-                            await LoggingCommandBeingExecuted(ctx.user.name, f"/adding_admins {member}\nCommand Status: Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {admin['User ID']} added!")
-                            await member.send(f"You have been authorized to have a Cyberbot admin account access on server {ctx.guild.name} by the server owner {ctx.user.name}\nPlease check your email {admin["User Email"]} for more details!")
-                            await ctx.followup.send(f"{member.name} admin account can now be used in server {ctx.guild.name}")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/adding_admins {member}\nCommand Status: Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {admin['User ID']} added!")
+                            await member.send(
+                                f"You have been authorized to have a Cyberbot admin account access on server {ctx.guild.name} by the server owner {ctx.user.name}\nPlease check your email {admin["User Email"]} for more details!")
+                            await ctx.followup.send(
+                                f"{member.name} admin account can now be used in server {ctx.guild.name}")
                             print(f"{member.name} admin access to server {ctx.guild.name} added!\n\n")
                         else:
-                            await LoggingCommandBeingExecuted(ctx.user.name,f"/adding_admins {member}\nCommand Status: Denied/Error sending email!")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/adding_admins {member}\nCommand Status: Denied/Error sending email!")
                             await ctx.followup.send(f"Cyberbot can't register {member.name} admin account!")
                             print(f"Error sending email\n\n")
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name, f"/adding_admins {member}\nCommand Status: Denied/Admin account already has access to server {ctx.guild.name} ID {ctx.guild.id}")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/adding_admins {member}\nCommand Status: Denied/Admin account already has access to server {ctx.guild.name} ID {ctx.guild.id}")
                         await ctx.followup.send(f"{member.name} admin account already has access to the server!")
                         print(f"{member.name} admin account already has access to the server!\n\n")
                     return
-            await LoggingCommandBeingExecuted(ctx.user.name, f"/adding_admins {member}\nCommand Status: Denied/Mentioned member does not have a Cyberbot admin account yet!")
+            await LoggingCommandBeingExecuted(ctx.user.name,
+                                              f"/adding_admins {member}\nCommand Status: Denied/Mentioned member does not have a Cyberbot admin account yet!")
             await ctx.followup.send(f"{member.name} does not have a Cyberbot admin account yet!")
             print(f"{member.name} does not have a Cyberbot admin account!\n\n")
     else:
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/adding_admins {member}\nCommand Status: Denied/Unauthorized User")
-        await ctx.followup.send("You're not the server's owner, the command /adding_admins is restricted to server owner ONLY!")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/adding_admins {member}\nCommand Status: Denied/Unauthorized User")
+        await ctx.followup.send(
+            "You're not the server's owner, the command /adding_admins is restricted to server owner ONLY!")
         print(f"User {ctx.user.name} not authorized to execute the command!\n\n")
 
 
@@ -1752,32 +2009,39 @@ async def removing_admins(ctx, member: discord.Member):
         for admin in CyberBotConfigData["Admins"]:
             if admin["User ID"] == member.id:
                 if ctx.guild.id not in admin["Accessible Servers"]:
-                    await LoggingCommandBeingExecuted(ctx.user.name, f"/removing_admins {member}\nCommand Status: Denied/Admin account already has no access to server {ctx.guild.name} ID {ctx.guild.id}")
+                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                      f"/removing_admins {member}\nCommand Status: Denied/Admin account already has no access to server {ctx.guild.name} ID {ctx.guild.id}")
                     await ctx.followup.send(f"{member.name} admin account already has no access to the server!")
                     print(f"{member.name} admin account already has no access to the server!\n\n")
                 else:
-                    if await asyncio.to_thread(sendEmail,"New Accessible Server Removed",
-                                 f"The owner {ctx.user.name} of server {ctx.guild.name} with server ID {ctx.guild.id} has removed your Cyberbot Admin Account access from the server",
-                                 admin["User Email"]) == "Email sent successfully!":
+                    if await asyncio.to_thread(sendEmail, "New Accessible Server Removed",
+                                               f"The owner {ctx.user.name} of server {ctx.guild.name} with server ID {ctx.guild.id} has removed your Cyberbot Admin Account access from the server",
+                                               admin["User Email"]) == "Email sent successfully!":
                         admin["Accessible Servers"].remove(ctx.guild.id)
                         async with ConfigLock:
                             async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                                 await file.write(json.dumps(CyberBotConfigData, indent=4))
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/removing_admins {member}\nCommand Status: Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {admin['User ID']} removed!")
-                        await member.send(f"Your admin account access on server {ctx.guild.name} ID {ctx.guild.id} has been removed by the server owner {ctx.user.name}\nPlease check your email {admin["User Email"]} for more details!")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/removing_admins {member}\nCommand Status: Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {admin['User ID']} removed!")
+                        await member.send(
+                            f"Your admin account access on server {ctx.guild.name} ID {ctx.guild.id} has been removed by the server owner {ctx.user.name}\nPlease check your email {admin["User Email"]} for more details!")
                         await ctx.followup.send(f"{member.name} admin account access removed from the server!")
                         print(f"{member.name} admin access to server {ctx.guild.name} removed!\n\n")
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name, f"/removing_admins {member}\nCommand Status: Denied/Error sending email!")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/removing_admins {member}\nCommand Status: Denied/Error sending email!")
                         await ctx.followup.send(f"Cyberbot can't register {member.name} admin account!")
                         print(f"Error sending email\n\n")
                 return
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/removing_admins {member}\nCommand Status: Denied/Mentioned member does not have a Cyberbot admin account yet!")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/removing_admins {member}\nCommand Status: Denied/Mentioned member does not have a Cyberbot admin account yet!")
         await ctx.followup.send(f"{member.name} does not have a Cyberbot admin account yet!")
         print(f"{member.name} does not have a Cyberbot admin account!\n\n")
     else:
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/removing_admins {member}\nCommand Status: Denied/Unauthorized User")
-        await ctx.followup.send("You're not the server's owner, the command /removing_admins is restricted to server owner ONLY!")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/removing_admins {member}\nCommand Status: Denied/Unauthorized User")
+        await ctx.followup.send(
+            "You're not the server's owner, the command /removing_admins is restricted to server owner ONLY!")
         print(f"User {ctx.user.name} not authorized to execute the command!\n\n")
 
 
@@ -1797,31 +2061,40 @@ async def request_password_reset_token(ctx):
                             resetTokens = json.loads(await file.read())
                     token = ""
                     for i in range(7):
-                        token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
+                        token += random.choice(
+                            f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
                     resetTokens[adminAccount["User Email"]] = [token, time.time() + 180]
                     async with ResetTokenLock:
                         async with aiofiles.open(RESETPASSWORDTOKENPATH, "w") as file:
                             await file.write(json.dumps(resetTokens, indent=4))
-                    await asyncio.to_thread(sendEmail,"Cyberbot Password Reset Token",
-                              f"Your password reset token is {token}, it will expired in 3 minutes!",
-                              adminAccount["User Email"])
-                    await LoggingCommandBeingExecuted(ctx.user.name, f"/request_password_reset_token\nCommand Status: Approved/A reset token has been sent to user email!")
+                    await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token",
+                                            f"Your password reset token is {token}, it will expired in 3 minutes!",
+                                            adminAccount["User Email"])
+                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                      f"/request_password_reset_token\nCommand Status: Approved/A reset token has been sent to user email!")
                     await ctx.followup.send(f"Please check your email {adminAccount["User Email"]}!")
-                    print(f"A new reset token has been sent to user {ctx.user.name} via email {adminAccount['User Email']}!\n\n")
+                    print(
+                        f"A new reset token has been sent to user {ctx.user.name} via email {adminAccount['User Email']}!\n\n")
                 else:
-                    await LoggingCommandBeingExecuted(ctx.user.name, f"/request_password_reset_token\nCommand Status: Denied/User password age not above 3 hours yet")
-                    await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
+                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                      f"/request_password_reset_token\nCommand Status: Denied/User password age not above 3 hours yet")
+                    await ctx.followup.send(
+                        f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
                     print(f"User {ctx.user.name} just changed the admin account password!\n\n")
             else:
-                await LoggingCommandBeingExecuted(ctx.user.name, f"/request_password_reset_token\nCommand Status: Denied/Admin account locked!")
+                await LoggingCommandBeingExecuted(ctx.user.name,
+                                                  f"/request_password_reset_token\nCommand Status: Denied/Admin account locked!")
                 hours_remaining = (adminAccount["Current Account Locked Out Period"] - time.time()) / 3600
                 minutes_remaining = round(float(f".{str(hours_remaining).split('.')[1]}") * 60)
-                await ctx.followup.send(f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
+                await ctx.followup.send(
+                    f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
                 print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
             return
 
-    await LoggingCommandBeingExecuted(ctx.user.name, f"/request_password_reset_token\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
-    await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/request_password_reset_token\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+    await ctx.followup.send(
+        f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
@@ -1835,7 +2108,8 @@ async def request_password_reset_token(ctx):
     custompassword="Select True if you want to create your own password, else Cyberbot will create and email the password to you!",
     newpassword="Please provide a new password for your account"
 )
-async def change_password(ctx, passwordresettoken: str, accountemail: str, custompassword: Literal["False", "True"], newpassword: str = "Default"):
+async def change_password(ctx, passwordresettoken: str, accountemail: str, custompassword: Literal["False", "True"],
+                          newpassword: str = "Default"):
     print(f"User {ctx.user.name} initiated /change_password command")
     await ctx.response.defer(ephemeral=True)
     for adminAccount in CyberBotConfigData["Admins"]:
@@ -1846,28 +2120,37 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, custo
                         async with aiofiles.open(RESETPASSWORDTOKENPATH, "r") as file:
                             resetTokens = json.loads(await file.read())
                     if accountemail in resetTokens:
-                        if resetTokens[accountemail][0] == passwordresettoken and time.time() < resetTokens[accountemail][1]:
+                        if resetTokens[accountemail][0] == passwordresettoken and time.time() < \
+                                resetTokens[accountemail][1]:
                             if time.time() >= adminAccount["Credential Minimum Age"]:
                                 update = True
                                 if custompassword == "True":
-                                    hashednewpassword = hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest()
+                                    hashednewpassword = hashlib.sha512(
+                                        f"{newpassword}{ctx.user.id}".encode()).hexdigest()
                                     if len(newpassword) > 30:
-                                        await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Password too long")
+                                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                          f"/change_password\nCommand Status: Denied/Password too long")
                                         await ctx.followup.send("Your new password is too long!")
                                         print(f"User {ctx.user.name} new password too long!\n\n")
                                         update = False
                                     elif hashednewpassword == adminAccount["User Credential"]:
-                                        await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Password is the same as the old one")
+                                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                          f"/change_password\nCommand Status: Denied/Password is the same as the old one")
                                         await ctx.followup.send("Your new password is the same as your old password!")
                                         print(f"User {ctx.user.name} reused password!\n\n")
                                         update = False
                                     elif hashednewpassword in adminAccount["Previous Credentials Used"]:
-                                        await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Password already been used from the past!")
-                                        await ctx.followup.send("You have used this password before, please set a new password!")
+                                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                          f"/change_password\nCommand Status: Denied/Password already been used from the past!")
+                                        await ctx.followup.send(
+                                            "You have used this password before, please set a new password!")
                                         print(f"User {ctx.user.name} reused password!\n\n")
                                         update = False
-                                    elif None in [re.search(r'[a-z]', newpassword), re.search(r'[A-Z]', newpassword), re.search(r'\d', newpassword), re.search(r'[!@#$%&*_+=]', newpassword)] or len(newpassword) < 12:
-                                        await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Password does not match the criteria")
+                                    elif None in [re.search(r'[a-z]', newpassword), re.search(r'[A-Z]', newpassword),
+                                                  re.search(r'\d', newpassword),
+                                                  re.search(r'[!@#$%&*_+=]', newpassword)] or len(newpassword) < 12:
+                                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                          f"/change_password\nCommand Status: Denied/Password does not match the criteria")
                                         await ctx.followup.send("Your new password password must be:\n"
                                                                 "At least 12 characters\n"
                                                                 "Have mixed case ASCII letters and numbers\n"
@@ -1876,34 +2159,55 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, custo
                                         print(f"User {ctx.user.name} new password not match the password policy!\n\n")
                                         update = False
                                     elif await CheckPasswordPwned(newpassword):
-                                        await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/New Password existed in a data breach database")
-                                        await ctx.followup.send("The new password that you want to set was detected to already existed in a data breach database, please choose a different password!")
+                                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                          f"/change_password\nCommand Status: Denied/New Password existed in a data breach database")
+                                        await ctx.followup.send(
+                                            "The new password that you want to set was detected to already existed in a data breach database, please choose a different password!")
                                         print(f"User {ctx.user.name} new password existed in data breach database!\n\n")
                                         update = False
                                     else:
-                                        passwordStrength, probability = await asyncio.to_thread(Prediction, newpassword, BERTtokenizer, BERTPasswordModel, "Password Strength")
+                                        passwordStrength, probability = await asyncio.to_thread(Prediction, newpassword,
+                                                                                                BERTtokenizer,
+                                                                                                BERTPasswordModel,
+                                                                                                "Password Strength")
                                         if passwordStrength < 3 and probability > 0.5:
-                                            await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/BERT model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
-                                            await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier BERT encoder-transformer flagged as weak password!\nPlease provide a different password")
+                                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                              f"/change_password\nCommand Status: Denied/BERT model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
+                                            await ctx.followup.send(
+                                                "Your new password contains patterns that Cyberbot pre-trained weak password classifier BERT encoder-transformer flagged as weak password!\nPlease provide a different password")
                                             print(f"User {ctx.user.name} new password flagged weak by BERT model!\n\n")
                                             update = False
                                         else:
-                                            passwordStrength, probability = await asyncio.to_thread(Prediction, newpassword, AllenAItokenizer, AllenAIPasswordModel,"Password Strength")
+                                            passwordStrength, probability = await asyncio.to_thread(Prediction,
+                                                                                                    newpassword,
+                                                                                                    AllenAItokenizer,
+                                                                                                    AllenAIPasswordModel,
+                                                                                                    "Password Strength")
                                             if passwordStrength < 3 and probability > 0.5:
-                                                await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Allen AI model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
-                                                await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier Allen AI encoder-transformer flagged as weak password!\nPlease provide a different password")
-                                                print(f"User {ctx.user.name} new password flagged weak by Allen AI model!\n\n")
+                                                await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                                  f"/change_password\nCommand Status: Denied/Allen AI model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
+                                                await ctx.followup.send(
+                                                    "Your new password contains patterns that Cyberbot pre-trained weak password classifier Allen AI encoder-transformer flagged as weak password!\nPlease provide a different password")
+                                                print(
+                                                    f"User {ctx.user.name} new password flagged weak by Allen AI model!\n\n")
                                                 update = False
                                             elif await GeminiCheckCommonPassword(newpassword):
-                                                await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Password too common and easy to guess")
-                                                await ctx.followup.send("Your new password contains keywords easy to guess or already in a common used password list!\nPlease provide a different password")
-                                                print(f"User {ctx.user.name} new password too common and easy to guess!\n\n")
+                                                await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                                  f"/change_password\nCommand Status: Denied/Password too common and easy to guess")
+                                                await ctx.followup.send(
+                                                    "Your new password contains keywords easy to guess or already in a common used password list!\nPlease provide a different password")
+                                                print(
+                                                    f"User {ctx.user.name} new password too common and easy to guess!\n\n")
                                                 update = False
                                 else:
                                     newpassword = await randomPasswordGenerator()
-                                    while hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() == adminAccount["User Credential"] or hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() in adminAccount["Previous Credentials Used"]:
+                                    while hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() == \
+                                            adminAccount["User Credential"] or hashlib.sha512(
+                                            f"{newpassword}{ctx.user.id}".encode()).hexdigest() in adminAccount[
+                                        "Previous Credentials Used"]:
                                         newpassword = randomPasswordGenerator()
-                                    hashednewpassword = hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest()
+                                    hashednewpassword = hashlib.sha512(
+                                        f"{newpassword}{ctx.user.id}".encode()).hexdigest()
                                 if update:
                                     adminAccount["User Credential"] = hashednewpassword
                                     adminAccount["Credential Minimum Age"] = time.time() + 10800
@@ -1913,40 +2217,52 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, custo
                                         async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                                             await file.write(json.dumps(CyberBotConfigData, indent=4))
                                     if custompassword == "False":
-                                        await asyncio.to_thread(sendEmail,"Cyberbot Admin Account Password Updated",
-                                                  f"Your admin account password has been changed to {newpassword}\n"
-                                                  f"Please delete this email once you have acknowledged your new password change!",
-                                                  accountemail)
-                                    await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Approved/Admin account password updated")
+                                        await asyncio.to_thread(sendEmail, "Cyberbot Admin Account Password Updated",
+                                                                f"Your admin account password has been changed to {newpassword}\n"
+                                                                f"Please delete this email once you have acknowledged your new password change!",
+                                                                accountemail)
+                                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                      f"/change_password\nCommand Status: Approved/Admin account password updated")
                                     await ctx.followup.send(f"Your password has been updated to {newpassword}")
                                     print(f"User {ctx.user.name} admin account updated successfully!\n\n")
                                     return
                             else:
-                                await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/User password age not above 3 hours yet")
-                                await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
+                                await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                  f"/change_password\nCommand Status: Denied/User password age not above 3 hours yet")
+                                await ctx.followup.send(
+                                    f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
                                 print(f"User {ctx.user.name} just changed the admin account password!\n\n")
                         else:
-                            await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Expired or Invalid Password Reset Token")
-                            await ctx.followup.send(f"The reset token provided is invalid or expired. Please request a new one again!")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/change_password\nCommand Status: Denied/Expired or Invalid Password Reset Token")
+                            await ctx.followup.send(
+                                f"The reset token provided is invalid or expired. Please request a new one again!")
                             print(f"User {ctx.user.name} password reset token Expired/Invalid!\n\n")
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/No Password Reset Token Request Yet")
-                        await ctx.followup.send(f"You have not request a reset token yet or the token is expired! Please use the command /request_password_reset_token to request one!")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/change_password\nCommand Status: Denied/No Password Reset Token Request Yet")
+                        await ctx.followup.send(
+                            f"You have not request a reset token yet or the token is expired! Please use the command /request_password_reset_token to request one!")
                         print(f"User {ctx.user.name} did not request a password reset token yet!\n\n")
                 else:
-                    await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Wrong Email Address")
+                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                      f"/change_password\nCommand Status: Denied/Wrong Email Address")
                     await ctx.followup.send("Your email address is wrong!")
                     print(f"User {ctx.user.name} provided wrong email address!\n\n")
             else:
-                await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/Admin account locked!")
+                await LoggingCommandBeingExecuted(ctx.user.name,
+                                                  f"/change_password\nCommand Status: Denied/Admin account locked!")
                 hours_remaining = (adminAccount["Current Account Locked Out Period"] - time.time()) / 3600
                 minutes_remaining = round(float(f".{str(hours_remaining).split('.')[1]}") * 60)
-                await ctx.followup.send( f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
+                await ctx.followup.send(
+                    f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
                 print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
             return
 
-    await LoggingCommandBeingExecuted(ctx.user.name, f"/change_password\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
-    await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/change_password\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+    await ctx.followup.send(
+        f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
@@ -1966,60 +2282,78 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
             if time.time() > adminAccount["Current Account Locked Out Period"]:
                 if str(ctx.guild.id) in adminAccount["Current Admin Session Period"]:
                     if time.time() < adminAccount["Current Admin Session Period"][str(ctx.guild.id)]:
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/User already logged in")
-                        await ctx.followup.send("You already logged in! If you want to log out, please use the command /admin_log_out")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/admin_log_in\nCommand Status: Denied/User already logged in")
+                        await ctx.followup.send(
+                            "You already logged in! If you want to log out, please use the command /admin_log_out")
                         print(f"User {ctx.user.name} already logged in as an admin in the server!\n\n")
                         return
 
-                if adminAccount["User Email"] == accountemail and adminAccount["User Credential"] == hashlib.sha512(f"{accountpassword}{ctx.user.id}".encode()).hexdigest():
+                if adminAccount["User Email"] == accountemail and adminAccount["User Credential"] == hashlib.sha512(
+                        f"{accountpassword}{ctx.user.id}".encode()).hexdigest():
                     if time.time() < adminAccount["Credential Expiration Age"]:
                         if ctx.guild.id in adminAccount["Accessible Servers"]:
                             adminAccount["Failed Log In Attempts"] = 0
                             adminAccount["Current Admin Session Period"][str(ctx.guild.id)] = time.time() + 3600
                             adminAccount["Last Time Logged In"] = time.ctime(time.time())
-                            await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Approved/New 1 hour admin session with admin account {adminAccount['User ID']} in server {ctx.guild.name} ID {ctx.user.id} created")
-                            await ctx.followup.send("Cyberbot will now recognize you as an admin for 1 hour in this server before requiring you to log in again!")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/admin_log_in\nCommand Status: Approved/New 1 hour admin session with admin account {adminAccount['User ID']} in server {ctx.guild.name} ID {ctx.user.id} created")
+                            await ctx.followup.send(
+                                "Cyberbot will now recognize you as an admin for 1 hour in this server before requiring you to log in again!")
                             print(f"User {ctx.user.name} logged in as an admin in the server!\n\n")
                         else:
-                            await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/User does not have admin account access to the server!")
-                            await ctx.followup.send(f"Your admin account is not permitted to access in this server, please contact the server owner {ctx.guild.owner.name} to give you admin account access to the server!")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/admin_log_in\nCommand Status: Denied/User does not have admin account access to the server!")
+                            await ctx.followup.send(
+                                f"Your admin account is not permitted to access in this server, please contact the server owner {ctx.guild.owner.name} to give you admin account access to the server!")
                             print(f"User {ctx.user.name} does not have admin account access to the server!\n\n")
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/Expired Password")
-                        await ctx.followup.send("Your password has expired. Please use /request_password_reset_token and /change_password to update your password!")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/admin_log_in\nCommand Status: Denied/Expired Password")
+                        await ctx.followup.send(
+                            "Your password has expired. Please use /request_password_reset_token and /change_password to update your password!")
                         print(f"User {ctx.user.name} password expired!\n\n")
                 else:
                     adminAccount["Failed Log In Attempts"] += 1
                     if adminAccount["Failed Log In Attempts"] != 7:
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/Bad Credentials")
-                        await ctx.followup.send(f"Invalid user email or password!!!\nYou have {7 - adminAccount["Failed Log In Attempts"]} attempts left to log in!")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/admin_log_in\nCommand Status: Denied/Bad Credentials")
+                        await ctx.followup.send(
+                            f"Invalid user email or password!!!\nYou have {7 - adminAccount["Failed Log In Attempts"]} attempts left to log in!")
                         print(f"User {ctx.user.name} input invalid credentials!\n\n")
                     else:
                         adminAccount["Locked Out History"].append(time.ctime(time.time()))
                         adminAccount["Current Account Locked Out Period"] = time.time() + 10800
                         adminAccount["Total Locked Out"] = len(adminAccount["Locked Out History"])
                         adminAccount["Failed Log In Attempts"] = 0
-                        await asyncio.to_thread(sendEmail,"Admin Account Locked Out", f"Dear user {ctx.user.name},\n\n"
-                                                                  f"You received this email from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid login attempts.\n"
-                                                                  f"The current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}",
-                                      adminAccount["User Email"])
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/Bad Credentials and account has been locked!")
-                        await ctx.followup.send("Too many failed login attempts! Your admin account has been locked for 3 hours!")
-                        print(f"User {ctx.user.name} input too many invalid log in attempts, initiating admin account lock out!\n\n")
+                        await asyncio.to_thread(sendEmail, "Admin Account Locked Out", f"Dear user {ctx.user.name},\n\n"
+                                                                                       f"You received this email from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid login attempts.\n"
+                                                                                       f"The current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}",
+                                                adminAccount["User Email"])
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/admin_log_in\nCommand Status: Denied/Bad Credentials and account has been locked!")
+                        await ctx.followup.send(
+                            "Too many failed login attempts! Your admin account has been locked for 3 hours!")
+                        print(
+                            f"User {ctx.user.name} input too many invalid log in attempts, initiating admin account lock out!\n\n")
 
                 async with ConfigLock:
                     async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                         await file.write(json.dumps(CyberBotConfigData, indent=4))
             else:
-                await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/Admin account locked!")
+                await LoggingCommandBeingExecuted(ctx.user.name,
+                                                  f"/admin_log_in\nCommand Status: Denied/Admin account locked!")
                 hours_remaining = (adminAccount["Current Account Locked Out Period"] - time.time()) / 3600
                 minutes_remaining = round(float(f".{str(hours_remaining).split('.')[1]}") * 60)
-                await ctx.followup.send(f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
+                await ctx.followup.send(
+                    f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
                 print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
             return
 
-    await LoggingCommandBeingExecuted(ctx.user.name, f"/admin_log_in\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
-    await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/admin_log_in\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+    await ctx.followup.send(
+        f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
@@ -2042,11 +2376,14 @@ async def admin_log_out(ctx):
                 print(f"User {ctx.user.name} admin account logged out successfully!\n\n")
             else:
                 await ctx.followup.send("You do not have any admin account session in this server!")
-                await LoggingCommandBeingExecuted(ctx.user.name, f"/admin_log_out\nCommand Status: Denied/User not logged in")
+                await LoggingCommandBeingExecuted(ctx.user.name,
+                                                  f"/admin_log_out\nCommand Status: Denied/User not logged in")
                 print(f"User {ctx.user.name} not currently logged in as an admin in server!\n\n")
             return
-    await LoggingCommandBeingExecuted(ctx.user.name, f"/admin_log_out\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
-    await ctx.followup.send("You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/admin_log_out\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+    await ctx.followup.send(
+        "You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
@@ -2059,12 +2396,14 @@ async def admin_log_out(ctx):
     configuration="Please select a configuration mode to enable/disable",
     action="Please select enable/disable"
 )
-async def cyberbot_config(ctx, configuration: Literal["Automation-Mode", "Silent-Mode"], action: Literal["ENABLE", "DISABLE"]):
+async def cyberbot_config(ctx, configuration: Literal["Automation-Mode", "Silent-Mode"],
+                          action: Literal["ENABLE", "DISABLE"]):
     print(f"User {ctx.user.name} initiated /cyberbot_config command")
     await ctx.response.defer(ephemeral=True)
     if str(ctx.channel.type).startswith("private"):
         await ctx.followup.send("/cyberbot_config can only be used in server channels!")
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/Command runs in DM channel")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/Command runs in DM channel")
         print(f"Command forbidden to execute in DM channel!\n\n")
     else:
         for adminAccount in CyberBotConfigData["Admins"]:
@@ -2077,29 +2416,39 @@ async def cyberbot_config(ctx, configuration: Literal["Automation-Mode", "Silent
                             else:
                                 CyberBotConfigData[configuration][str(ctx.guild.id)] = "False"
                             await ctx.followup.send("DONE")
-                            await ctx.followup.send(f"{configuration} for this server has been {'enabled' if (CyberBotConfigData[configuration][str(ctx.guild.id)] == "True") else 'disabled'} by user {ctx.user.mention}!")
-                            await LoggingCommandBeingExecuted(ctx.user.name, f"/cyberbot_config {configuration} {action}\nCommand Status: Approved/{configuration} {action} in server {ctx.guild.name} - ID {ctx.guild.id}")
+                            await ctx.followup.send(
+                                f"{configuration} for this server has been {'enabled' if (CyberBotConfigData[configuration][str(ctx.guild.id)] == "True") else 'disabled'} by user {ctx.user.mention}!")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/cyberbot_config {configuration} {action}\nCommand Status: Approved/{configuration} {action} in server {ctx.guild.name} - ID {ctx.guild.id}")
                             print(f"{configuration} been reconfigured!\n\n")
                         else:
                             del adminAccount["Current Admin Session Period"][str(ctx.guild.id)]
-                            await LoggingCommandBeingExecuted(ctx.user.name,f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/Admin session expired")
-                            await ctx.followup.send(f"Your admin session with this server has expired! Please logging in again.")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/Admin session expired")
+                            await ctx.followup.send(
+                                f"Your admin session with this server has expired! Please logging in again.")
                             print(f"User admin session expired!\n\n")
 
                         async with ConfigLock:
                             async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                                 await file.write(json.dumps(CyberBotConfigData, indent=4))
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name, f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/User need to log in as an admin")
-                        await ctx.followup.send(f"You need to use /admin_log_in to log in as an admin in this server to execute this command!")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/User need to log in as an admin")
+                        await ctx.followup.send(
+                            f"You need to use /admin_log_in to log in as an admin in this server to execute this command!")
                         print(f"User {ctx.user.name} need to log in as an admin!\n\n")
                 else:
-                    await LoggingCommandBeingExecuted(ctx.user.name, f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/User does not have admin account access to the server!")
-                    await ctx.followup.send(f"You do not have an admin account access to the server, please contact the server owner {ctx.guild.owner.name} to add your admin account access to the server!")
+                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                      f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/User does not have admin account access to the server!")
+                    await ctx.followup.send(
+                        f"You do not have an admin account access to the server, please contact the server owner {ctx.guild.owner.name} to add your admin account access to the server!")
                     print(f"User {ctx.user.name} not authorized to execute the command!\n\n")
                 return
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
-        await ctx.followup.send("You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/cyberbot_config {configuration} {action}\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+        await ctx.followup.send(
+            "You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
         print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
@@ -2116,7 +2465,8 @@ async def non_monitoring_channel(ctx, action: Literal["ADD", "REMOVE"]):
     await ctx.response.defer(ephemeral=True)
     if str(ctx.channel.type).startswith("private"):
         await ctx.followup.send("/non_monitoring_channel can only be used in server channels!")
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/non_monitoring_channel {action}\nCommand Status: Denied/Command runs in DM channel")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/non_monitoring_channel {action}\nCommand Status: Denied/Command runs in DM channel")
         print(f"Command forbidden to execute in DM channel!\n\n")
     else:
         for adminAccount in CyberBotConfigData["Admins"]:
@@ -2127,44 +2477,65 @@ async def non_monitoring_channel(ctx, action: Literal["ADD", "REMOVE"]):
                             if not str(ctx.guild.id) in CyberBotConfigData["Non-monitoring-Channels"]:
                                 CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)] = []
                             if action == "ADD":
-                                if ctx.channel.id not in CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)]:
-                                    CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)].append(ctx.channel.id)
-                                    await ctx.followup.send(f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
-                                    await ctx.followup.send(f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been added to the server non monitoring channel list by user {ctx.user.mention}!")
-                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Approved/Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                if ctx.channel.id not in CyberBotConfigData["Non-monitoring-Channels"][
+                                    str(ctx.guild.id)]:
+                                    CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)].append(
+                                        ctx.channel.id)
+                                    await ctx.followup.send(
+                                        f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                    await ctx.followup.send(
+                                        f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been added to the server non monitoring channel list by user {ctx.user.mention}!")
+                                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                      f"/non_monitoring_channel {action}\nCommand Status: Approved/Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
                                 else:
-                                    await ctx.followup.send(f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
-                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Denied/Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                    await ctx.followup.send(
+                                        f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                      f"/non_monitoring_channel {action}\nCommand Status: Denied/Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been added to the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
                             else:
                                 if ctx.channel.id in CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)]:
-                                    CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)].remove(ctx.channel.id)
-                                    await ctx.followup.send(f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
-                                    await ctx.followup.send(f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been removed from the server non monitoring channel list by user {ctx.user.mention}!")
-                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Approved/Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                    CyberBotConfigData["Non-monitoring-Channels"][str(ctx.guild.id)].remove(
+                                        ctx.channel.id)
+                                    await ctx.followup.send(
+                                        f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                    await ctx.followup.send(
+                                        f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been removed from the server non monitoring channel list by user {ctx.user.mention}!")
+                                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                      f"/non_monitoring_channel {action}\nCommand Status: Approved/Channel '{ctx.channel.name}' - ID {ctx.channel.id} has been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
                                 else:
-                                    await ctx.followup.send(f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
-                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Denied/Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                    await ctx.followup.send(
+                                        f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                                      f"/non_monitoring_channel {action}\nCommand Status: Denied/Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
                         else:
                             del adminAccount["Current Admin Session Period"][str(ctx.guild.id)]
-                            await LoggingCommandBeingExecuted(ctx.user.name, f"/non_monitoring_channel {action}\nCommand Status: Denied/Admin session expired")
-                            await ctx.followup.send(f"Your admin session with this server has expired! Please logging in again.")
+                            await LoggingCommandBeingExecuted(ctx.user.name,
+                                                              f"/non_monitoring_channel {action}\nCommand Status: Denied/Admin session expired")
+                            await ctx.followup.send(
+                                f"Your admin session with this server has expired! Please logging in again.")
                             print(f"User admin session expired!\n\n")
 
                         async with ConfigLock:
                             async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                                 await file.write(json.dumps(CyberBotConfigData, indent=4))
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Denied/User need to log in as an admin")
-                        await ctx.followup.send(f"You need to use /admin_log_in to log in as an admin in this server to execute this command!")
+                        await LoggingCommandBeingExecuted(ctx.user.name,
+                                                          f"/non_monitoring_channel {action}\nCommand Status: Denied/User need to log in as an admin")
+                        await ctx.followup.send(
+                            f"You need to use /admin_log_in to log in as an admin in this server to execute this command!")
                         print(f"User {ctx.user.name} need to log in as an admin!\n\n")
                 else:
-                    await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Denied/User does not have admin account access to the server!")
-                    await ctx.followup.send(f"You do not have an admin account access to the server, please contact the server owner {ctx.guild.owner.name} to create an admin account for you!")
+                    await LoggingCommandBeingExecuted(ctx.user.name,
+                                                      f"/non_monitoring_channel {action}\nCommand Status: Denied/User does not have admin account access to the server!")
+                    await ctx.followup.send(
+                        f"You do not have an admin account access to the server, please contact the server owner {ctx.guild.owner.name} to create an admin account for you!")
                     print(f"User {ctx.user.name} not authorized to execute the command!\n\n")
                 return
 
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/non_monitoring_channel {action}\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
-        await ctx.followup.send("You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/non_monitoring_channel {action}\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+        await ctx.followup.send(
+            "You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
         print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
@@ -2180,7 +2551,8 @@ async def checking_file_true_format(ctx, file: discord.Attachment):
     await ctx.response.defer()
     fileExt = await checkingRealFileExtension(await file.read(), file.filename)
     await ctx.followup.send(f"The file extension is: {fileExt}\n\n")
-    await LoggingCommandBeingExecuted(ctx.user.name, f"/checking_file_true_format file temporary URL: {file.url}\nCommand Status: Approved")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/checking_file_true_format file temporary URL: {file.url}\nCommand Status: Approved")
 
 
 @Cyberbot.tree.command(
@@ -2196,11 +2568,14 @@ async def semgrep_vulnerability_scan(ctx, file: discord.Attachment, semgrep_rule
     print(f"User {ctx.user.name} initiated Semgrep Vulnerability Scan for file {file.filename}")
     await ctx.response.defer()
     if "../" in file.filename:
-        await ctx.followup.sent("Vulnerability scan not performed for this file due to potential ../ attack in the file name scheme!")
-        await LoggingCommandBeingExecuted(ctx.user.name, f"/semgrep_vulnerability_scan file temporary URL: {file.url} Rule: {semgrep_rule}\nCommand Status: Denied/File name hinted potential ../ attack!")
+        await ctx.followup.sent(
+            "Vulnerability scan not performed for this file due to potential ../ attack in the file name scheme!")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/semgrep_vulnerability_scan file temporary URL: {file.url} Rule: {semgrep_rule}\nCommand Status: Denied/File name hinted potential ../ attack!")
         print(f"Potential ../ attack! Reject scan process!\n\n")
     else:
-        await LoggingCommandBeingExecuted(ctx.user.name,f"/semgrep_vulnerability_scan file temporary URL: {file.url} Rule: {semgrep_rule}\nCommand Status: Approved")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/semgrep_vulnerability_scan file temporary URL: {file.url} Rule: {semgrep_rule}\nCommand Status: Approved")
         print("Downloading file content...")
         FILEDOWNLOADCOUNTER += 1
         fileExt = await checkingRealFileExtension(await file.read(), file.filename)
@@ -2212,7 +2587,9 @@ async def semgrep_vulnerability_scan(ctx, file: discord.Attachment, semgrep_rule
                         await data.write(chunk)
         print("Downloading Success!!!")
         try:
-            result = await asyncio.to_thread(subprocess.run,["semgrep", "--config", f"{semgrep_rule}", "--json", filePath], capture_output=True, text=True)
+            result = await asyncio.to_thread(subprocess.run,
+                                             ["semgrep", "--config", f"{semgrep_rule}", "--json", filePath],
+                                             capture_output=True, text=True)
             semgrepRawData = json.loads(result.stdout)
             semgrepRawData.pop("paths", None)
             for finding in semgrepRawData["results"]:
@@ -2240,71 +2617,400 @@ async def semgrep_vulnerability_scan(ctx, file: discord.Attachment, semgrep_rule
     keep_output_secret="Select Yes if you want the command (Your input and Cyberbot output) be private!"
 )
 async def phishing_email_scan(ctx, email_content: str, keep_output_secret: Literal["Yes", "No"]):
-    print(f"User {ctx.user.name} initiated phishing_email_scan Scan for email content: {email_content} with keep_output_secret: {keep_output_secret}")
+    print(
+        f"User {ctx.user.name} initiated phishing_email_scan Scan for email content: {email_content} with keep_output_secret: {keep_output_secret}")
     if keep_output_secret == "Yes":
         await ctx.response.defer(ephemeral=True)
     else:
         await ctx.response.defer()
-    await LoggingCommandBeingExecuted(ctx.user.name,f"/phishing_email_scan on email Content: {email_content} with keep_output_secret: {keep_output_secret}\nCommand Status: Approved")
-    BERTPhishingResult, BERTPhishingprobability = await asyncio.to_thread(Prediction, email_content, BERTtokenizer, BERTPhishingModel, "Phishing Emails")
-    AllenAIPhishingResult, AllenAIPhishingprobability = await asyncio.to_thread(Prediction, email_content, AllenAItokenizer, AllenAIPhishingModel, "Phishing Emails")
-    BERTSpamResult, BERTSpamprobability = await asyncio.to_thread(Prediction, email_content, BERTtokenizer, BERTSpamModel, "Spam Emails")
-    AllenAISpamResult, AllenAISpamprobability = await asyncio.to_thread(Prediction, email_content, AllenAItokenizer, ALLENAISpamModel, "Spam Emails")
+    await LoggingCommandBeingExecuted(ctx.user.name,
+                                      f"/phishing_email_scan on email Content: {email_content} with keep_output_secret: {keep_output_secret}\nCommand Status: Approved")
+    BERTPhishingResult, BERTPhishingprobability = await asyncio.to_thread(Prediction, email_content, BERTtokenizer,
+                                                                          BERTPhishingModel, "Phishing Emails")
+    AllenAIPhishingResult, AllenAIPhishingprobability = await asyncio.to_thread(Prediction, email_content,
+                                                                                AllenAItokenizer, AllenAIPhishingModel,
+                                                                                "Phishing Emails")
+    BERTSpamResult, BERTSpamprobability = await asyncio.to_thread(Prediction, email_content, BERTtokenizer,
+                                                                  BERTSpamModel, "Spam Emails")
+    AllenAISpamResult, AllenAISpamprobability = await asyncio.to_thread(Prediction, email_content, AllenAItokenizer,
+                                                                        ALLENAISpamModel, "Spam Emails")
 
-    await ctx.followup.send(f"BERT-based Encoder-Transformer Phishing Detector Model results:\n{labels["Phishing"][str(BERTPhishingResult)]}\nConfidence: {BERTPhishingprobability * 100:.4f}%\n\n"
-                            f"AllenAI-based Encoder-Transformer Phishing Detector  results:\n{labels["Phishing"][str(AllenAIPhishingResult)]}\nConfidence: {AllenAIPhishingprobability * 100:.4f}%\n\n"
-                            f"BERT-based Encoder-Transformer Spam Detector Model results:\n{labels["Spam"][str(BERTSpamResult)]}\nConfidence: {BERTSpamprobability * 100:.4f}%\n\n"
-                            f"AllenAI-based Encoder-Transformer Spam Detector  results:\n{labels["Spam"][str(AllenAISpamResult)]}\nConfidence: {AllenAISpamprobability * 100:.4f}%\n\n"
-                            f"PLEASE NOTE that all the pre-trained encoder-transformer models were only trained on emails mostly written in English only with maximum of 1500 tokens/words!")
+    await ctx.followup.send(
+        f"BERT-based Encoder-Transformer Phishing Detector Model results:\n{labels["Phishing"][str(BERTPhishingResult)]}\nConfidence: {BERTPhishingprobability * 100:.4f}%\n\n"
+        f"AllenAI-based Encoder-Transformer Phishing Detector  results:\n{labels["Phishing"][str(AllenAIPhishingResult)]}\nConfidence: {AllenAIPhishingprobability * 100:.4f}%\n\n"
+        f"BERT-based Encoder-Transformer Spam Detector Model results:\n{labels["Spam"][str(BERTSpamResult)]}\nConfidence: {BERTSpamprobability * 100:.4f}%\n\n"
+        f"AllenAI-based Encoder-Transformer Spam Detector  results:\n{labels["Spam"][str(AllenAISpamResult)]}\nConfidence: {AllenAISpamprobability * 100:.4f}%\n\n"
+        f"PLEASE NOTE that all the pre-trained encoder-transformer models were only trained on emails mostly written in English only with maximum of 1500 tokens/words!")
 
-'''
+
 #  Command can run in any channels
 @Cyberbot.tree.command(
-    name="manual_malware_scan_mode",
-    description="Manually scan the file content you provided with GPT, Gemini, Virus Total, ClamAV, and CAPEv2"
+    name="manual_malware_scan",
+    description="Manually scan the file content you provided with OpenAI, Gemini, and Virus Total"
 )
 @app_commands.describe(
-    file="Upload a single file to scan"
+    file_to_be_scanned="Upload a single file to scan"
 )
-async def manual_malware_scan_mode(ctx, file: discord.Attachment):
-    print(f"User {ctx.user.name} initiated Manual Malware Scan for file {file.filename}")
+async def manual_malware_scan(ctx, file_to_be_scanned: discord.Attachment):
+    global FILEDOWNLOADCOUNTER, CURRENTSCANOPERATION
+
+    print(f"User {ctx.user.name} initiated Manual Malware Scan for file {file_to_be_scanned.filename}")
     await ctx.response.defer()
-    if "../" in file.filename:
-        await ctx.followup.sent("Vulnerability scan not performed for this file due to potential ../ attack in the file name scheme!")
-        LoggingCommandBeingExecuted(ctx.user.name,
-                                    f"/manual_malware_scan_mode file temporary URL: {file.url}\nCommand Status: Denied/File name hinted potential ../ attack!")
+    if "../" in file_to_be_scanned.filename:
+        await ctx.followup.send(
+            "Malware scan not performed for this file due to potential ../ attack in the file name scheme!")
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/manual_malware_scan_mode file temporary URL: {file_to_be_scanned.url}\nCommand Status: Denied/File name hinted potential ../ attack!")
         print(f"Potential ../ attack! Reject scan process!\n\n")
     else:
-        LoggingCommandBeingExecuted(ctx.user.name,
-                                    f"/manual_malware_scan_mode file temporary URL: {file.url}\nCommand Status: Approved")
-        if file.filename.endswith((".enc", ".aes", ".pgp", ".gpg", ".vault")):
-            print("File is encrypted, can not open without the key!")
-            print("Scan Process Finish!\n\n")
-            await ctx.followup.send(f"The file {file.filename} appears to be an encrypted file that may"
-                                    f" contain confidential or malware information, it is encrypted,"
-                                    f" so Cyberbot can not scan for the content. If you're intend to share the "
-                                    f"encrypted file for sharing legitimate information with someone, please do "
-                                    f"it via DM with the wanted party. If you received the file from someone that"
-                                    f" you do not know, I advice not to download the file and decrypt it! If you have the"
-                                    f" key, you can decrypt the file but do not open it and send again for Cyberbot to "
-                                    f"scan!")
-            LoggingCommandBeingExecuted(ctx.user.name,  f"/manual_malware_scan_mode file temporary URL: {file.url}\nCommand Status: File is encrypted!")
-            return
+        await LoggingCommandBeingExecuted(ctx.user.name,
+                                          f"/manual_malware_scan_mode file temporary URL: {file_to_be_scanned.url}\nCommand Status: Approved")
+        logMessage = (f"{time.ctime(time.time())}\n"
+                      f"ORIGIN AUTHOR: {ctx.user.name}\n"
+                      f"ORIGIN AUTHOR ID: {ctx.user.id}\n"
+                      f"ORIGIN DISCORD SERVER: {ctx.guild.name}\n"
+                      f"ORIGIN SERVER ID: {ctx.guild.id}\n"
+                      f"ORIGIN CHANNEL NAME: {ctx.channel.name}\n"
+                      f"ORIGIN CHANNEL ID: {ctx.channel.id}\n"
+                      f"FILE ATTACHMENT: {file_to_be_scanned.filename}\n")
 
-        filePath = f"{DOWNLOADINGDIRPATH}{os.path.basename(file.url).split('?')[0]}"
-        print("Downloading file content...")
-        with requests.get(file.url, stream=True) as r:
-            if r.status_code == 200:
-                with open(filePath, "wb") as data:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        data.write(chunk)
-        print("Downloading Success!!!")
-'''
+        filePath = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}"
+        scanOperation = False
+        sendingMessage = ""
+
+        """Checking if file size within the supported file size for scan"""
+        async with Cyberbot.session.head(file_to_be_scanned.url) as head:
+            FullContentLength = int(head.headers.get("Content-Length", 0))
+        logMessage += f"FILE SIZE: {FullContentLength} bytes\n"
+        if FullContentLength > 300000000:
+            logMessage += f"FILE SCAN SUMMARY: File attachment has a total size of {FullContentLength} bytes. Size exceeding Cyberbot file size limit of 300 MB\n"
+            await ctx.followup.send(
+                f"The file {file_to_be_scanned.filename} has a size {FullContentLength} bytes, which"
+                f" exceeding the file size limit that Cyberbot can support! The content won't be"
+                f" scanned!")
+            await logScanSession(f"{logMessage}\n\n")
+        else:
+            async with Cyberbot.session.get(file_to_be_scanned.url, headers=MAINHEADERS) as response:
+                if not response.status in range(400, 500):
+                    RootFileHashed = hashlib.sha256(await response.read()).hexdigest()
+                    logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
+
+                    """Checking file true extension"""
+                    RootFileTrueExt = await checkingRealFileExtension(await response.read(),
+                                                                      file_to_be_scanned.filename)
+                    logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
+                    sendingMessage += f"The file {file_to_be_scanned.filename} extension is: {RootFileTrueExt}\n"
+                    filePath = f"{filePath}{RootFileTrueExt}"
+
+                    """Checking if there is another subroutine scanning the same file"""
+                    if CURRENTSCANOPERATION.get(RootFileHashed, "") == "In Progress":
+                        print(f"File {file_to_be_scanned.filename} is currently being scanned by other subroutine!")
+                        while True:
+                            await asyncio.sleep(0)
+                            if not CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                break
+                    else:
+                        CURRENTSCANOPERATION[RootFileHashed] = "In Progress"
+
+                    """Checking if file hashed signature already in clean or malicious data set"""
+                    if await checkingCleanData(RootFileHashed, "All Extension"):
+                        logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
+                        print(
+                            f"File {file_to_be_scanned.filename} has already been checked and recorded in the clean data set!\n\n")
+                        sendingMessage += f"File {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
+                    elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
+                        logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
+                        print(
+                            f"File {file_to_be_scanned.filename} has already been checked and recorded in the malicious file set!\n\n")
+                        sendingMessage += f"File {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!"
+                        await ctx.followup.send(sendingMessage)
+                        print(f"Scan Process Finish!\n\n")
+                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                            del CURRENTSCANOPERATION[RootFileHashed]
+                        await logScanSession(f"{logMessage}\n\n")
+                        return
+                    else:
+                        """Checking if file is encrypted"""
+                        if RootFileTrueExt.endswith(ENCRYPTEDFILEFORMATS):
+                            logMessage += "FILE SCAN SUMMARY: File attachment is encrypted. Cyberbot can not scan\n"
+                            print("File is encrypted, can not open without the key!")
+                            sendingMessage += f"The file {file_to_be_scanned.filename} is an encrypted file that may contain confidential or malware information, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advice not to download the file and decrypt it! If you have the key, you can decrypt the file but do not open it and send again for Cyberbot to scan!\n"
+                        else:
+                            if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
+                                print("Downloading attachment content...")
+                                async with aiofiles.open(filePath, "wb") as file:
+                                    await file.write(await response.read())
+                                print("Attachment file downloaded!")
+                                mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
+                                os.mkdir(mountPoint)
+                                print(f"Mount point {mountPoint} created!")
+                                scanOperation = True
+                                FILEDOWNLOADCOUNTER += 1
+                            else:
+                                logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
+                                print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
+                                sendingMessage += f"The file {file_to_be_scanned.filename} extension is outside of Cyberbot scope of file formats for malware analysis!\n"
+                else:
+                    logMessage += "FILE SCAN SUMMARY: File attachment can not be downloaded by Cyberbot for malware analysis!\n"
+                    print(f"Cyberbot can not retrieve the attachment for scan!")
+                    sendingMessage += f"Cyberbot can not retrieve {file_to_be_scanned.filename}!"
+
+            if scanOperation:
+                print(f"Start scanning {file_to_be_scanned.filename} contents with Virus Total...")
+                virusTotalResult = await virusTotalFileScan(filePath)
+                if virusTotalResult != "File can't be scanned":
+                    virusTotalResult = virusTotalResult.split(":")
+                    virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
+                    if int(virusTotalResult[0]) > 0:
+                        logMessage += "FILE SCAN SUMMARY: File attachment flagged as Malicious by VirusTotal\n"
+                        print(f"Virus Total analyzed file {file_to_be_scanned.filename} as malicious!")
+                        sendingMessage += f"The file {file_to_be_scanned.filename} was flagged malicious by Virus Total!\n{virusTotalReport}\n"
+                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                        os.remove(filePath)
+                        print("Cleaning up process...")
+                        shutil.rmtree(mountPoint)
+                        print(f"Scan Process Finish!\n\n")
+                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                            del CURRENTSCANOPERATION[RootFileHashed]
+                        await logScanSession(f"{logMessage}\n\n")
+                        await ctx.followup.send(sendingMessage)
+                        return
+                    logMessage += "VIRUS TOTAL SCAN: Safe To Download"
+                else:
+                    logMessage += "VIRUS TOTAL SCAN: Error\n"
+                    print(f"VirusTotal can not scan the attachment!")
+
+                if RootFileTrueExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
+                    print("Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
+                    FileUncompressedSize = await asyncio.to_thread(ArchivesDiskImagesBombAnalysisAndExtraction,
+                                                                   [filePath], mountPoint)
+                    if FileUncompressedSize.startswith(
+                            ("Encrypted Error", "Path Transversal Attack", "Potential Archive Bomb!",
+                             "Disk Image Error!", "Potential Recursive Archive Bomb Attack!",
+                             "Too many duplicated files!")):
+                        if FileUncompressedSize.startswith("Encrypted Error"):
+                            logMessage += f"FILE SCAN SUMMARY: File Attachment is an encrypted archive/disk file. Cyberbot can not scan encrypted content\n"
+                            print(f"Archive/Disk file encrypted!")
+                            sendingMessage += f"The archive/disk file {file_to_be_scanned.filename} contains an encrypted file that may contain confidential or malware, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advise not to download the file and decrypt it!\n"
+                        elif FileUncompressedSize.startswith("Path Transversal Attack"):
+                            logMessage += f"FILE SCAN SUMMARY: File Attachment contains an uncompressed content with potential path transversal attack scheme\n"
+                            print(f"Archive/Disk file detected potential path transversal attack!")
+                            sendingMessage += f"The file {file_to_be_scanned.filename} contains a file content with file name that can cause a path transversal attack!\n"
+                        elif FileUncompressedSize.startswith("Potential Archive Bomb!"):
+                            logMessage += f"FILE SCAN SUMMARY: File Attachment uncompressed size exceeding 32 GB. Potential archive/disk bomb\n"
+                            print(f"Archive/Disk file uncompressed size exceeding 32 GB!")
+                            sendingMessage += f"The file {file_to_be_scanned.filename} has an uncompressed size exceeding 32 GB, potential archive/diskImage bomb detected!\n"
+                        elif FileUncompressedSize.startswith("Disk Image Error!"):
+                            logMessage += f"FILE SCAN SUMMARY: File Attachment has a corrupted disk image\n"
+                            print(f"Archive/Disk file has corrupted disk image")
+                            sendingMessage += f"The file {file_to_be_scanned.filename} has a corrupted disk image!\n"
+                        elif FileUncompressedSize.startswith("Potential Recursive Archive Bomb Attack!"):
+                            logMessage += f"FILE SCAN SUMMARY: File Attachment has more than 3 duplicated archive/disk files. Potential recursive archive/disk bomb attack\n"
+                            print(f"Archive/Disk file has more than 3 duplicated archive/disk files")
+                            sendingMessage += f"The file {file_to_be_scanned.filename} has more than 3 duplicated archive/disk files within it compressed content! This could be a hint for a potential Recursive Archive/Disk Bomb Attack!\n"
+                        else:
+                            logMessage += f"FILE SCAN SUMMARY: File Attachment is an archive/disk image with too many duplicated content. A hint for a potential Archive/Disk Bomb Attack Method that extract many duplicated content to fill up storage space!\n"
+                            print(f"Archive/Disk file has too many duplicated contents")
+                            sendingMessage += f"The file {file_to_be_scanned.filename} has too many duplicated files within it compressed content! This is a hint for a potential Archive/Disk Bomb Attack Method that extract many duplicated content to fill up storage space!\n"
+                        if not FileUncompressedSize.startswith("Encrypted Error"):
+                            await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                        print("Cleaning up process...")
+                        shutil.rmtree(mountPoint)
+                        print(f"Scan Process Finish!\n\n")
+                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                            del CURRENTSCANOPERATION[RootFileHashed]
+                        await logScanSession(f"{logMessage}\n\n")
+                        await ctx.followup.send(sendingMessage)
+                        return
+
+                    ufs = uncompressedFileStructure(mountPoint, indent="")
+
+                    logMessage += f"FILE UNCOMPRESSION SUMMARY: The file uncompressed size {FileUncompressedSize.split('|')[0]} bytes and {FileUncompressedSize.split('|')[1]} duplicated content.\nUNCOMPRESSED FILE STRUCTURE:\n{ufs}\n"
+                    sendingMessage += f"The file {file_to_be_scanned.filename} has an uncompressed size of {FileUncompressedSize.split('|')[0]} bytes, which below the standard threshold uncompressed size of 32 GB to be flagged as archive/diskImage bomb!\nBegin the scanning process on the uncompressed content, which may take quite some time. There are {FileUncompressedSize.split('|')[1]} duplicated content to be aware of!\nThe Uncompressed File Structure of {file_to_be_scanned.filename} are:\n{ufs}"
+                    print(f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
+                    for dirpath, _, filenames in os.walk(mountPoint):
+                        for filename in filenames:
+                            logMessage += f"UNCOMPRESSED FILE INSIDE ARCHIVE {file_to_be_scanned.filename}: {filename}\n"
+                            filepath = os.path.join(dirpath, filename)
+                            fileSize = os.path.getsize(filepath)
+                            async with aiofiles.open(filepath, mode="rb") as source:
+                                fileExt = await checkingRealFileExtension(await source.read(), filename)
+                                HashedFileData = hashlib.sha256(await source.read()).hexdigest()
+                            print(
+                                f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                            logMessage += f"SHA-256 HASH: {HashedFileData}\nFILE SIZE: {fileSize} bytes\nFILE EXT: {fileExt}\n"
+
+                            if await checkingCleanData(HashedFileData, "All Extension"):
+                                print(f"File {filename} has already been checked and recorded in the clean data set!\n")
+                                logMessage += "FILE SCAN SUMMARY: File already scanned as Safe To Download\n"
+                                sendingMessage += f"File {filename} inside archive/disk image {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
+                                os.remove(filepath)
+                            elif await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
+                                logMessage += "FILE SCAN SUMMARY: File already flagged Malicious\n"
+                                print(
+                                    f"File {filename} has already been checked and recorded in the malicious file set!")
+                                sendingMessage += f"File {filename} inside {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!\n"
+                                await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                print("Cleaning up process...")
+                                shutil.rmtree(mountPoint)
+                                print(f"Scan Process Finish!\n\n")
+                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                    del CURRENTSCANOPERATION[RootFileHashed]
+                                await logScanSession(f"{logMessage}\n\n")
+                                await ctx.followup.send(sendingMessage)
+                                return
+                            else:
+                                print(f"Start Virus Total Scan on {filename}...")
+                                virusTotalResult = await virusTotalFileScan(filepath)
+                                if virusTotalResult != "File can't be scanned":
+                                    virusTotalResult = virusTotalResult.split(":")
+                                    virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
+                                    if int(virusTotalResult[0]) > 0:
+                                        logMessage += "FILE SCAN SUMMARY: VirusTotal flagged as Malicious\n"
+                                        print(f"Virus Total analyzed file {filename} as malicious!")
+                                        sendingMessage += f"File {filename} inside archive/disk image {file_to_be_scanned.filename} was flagged malicious by Virus Total!\n{virusTotalReport}"
+                                        await addingHashedData(HashedFileData, fileExt, True)
+                                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                        print("Cleaning up process...")
+                                        shutil.rmtree(mountPoint)
+                                        print(f"Scan Process Finish!\n\n")
+                                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                            del CURRENTSCANOPERATION[RootFileHashed]
+                                        await logScanSession(f"{logMessage}\n\n")
+                                        await ctx.followup.send(sendingMessage)
+                                        return
+                                logMessage += "VIRUS TOTAL SCAN: Safe To Download"
+                                if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(EXECUTABLEFORMATS):
+                                    await addingHashedData(HashedFileData, fileExt, False)
+                                    os.remove(filepath)
+                else:
+                    shutil.move(filePath, mountPoint)
+                    print(f"Content has been moved to main scan directory {mountPoint}")
+
+                CompiledHashedMap = {}
+                print(f"Start scanning for COMPILED/EXECUTABLE file contents ONLY at {mountPoint}...")
+                for dirpath, _, filenames in os.walk(mountPoint):
+                    for filename in filenames:
+                        filepath = os.path.join(dirpath, filename)
+                        fileSize = os.path.getsize(filepath)
+                        async with aiofiles.open(filepath, "rb") as source:
+                            fileExt = await checkingRealFileExtension(await source.read(), filename)
+                            HashedCompiledFileData = hashlib.sha256(await source.read()).hexdigest()
+
+                        if fileExt in EXECUTABLEFORMATS:
+                            print(
+                                f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                            outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint, filename)
+                            if outputFilePath != "ERROR":
+                                async with aiofiles.open(outputFilePath, "rb") as file:
+                                    HashedDecompiledData = hashlib.sha256(await file.read()).hexdigest()
+                                CompiledHashedMap[HashedCompiledFileData] = HashedDecompiledData
+
+                print(f"Start scanning for SCRIPT file contents ONLY at {mountPoint}...")
+                for dirpath, _, filenames in os.walk(mountPoint):
+                    for filename in filenames:
+                        filepath = os.path.join(dirpath, filename)
+                        fileSize = os.path.getsize(filepath)
+                        async with aiofiles.open(filepath, "rb") as source:
+                            fileExt = await checkingRealFileExtension(await source.read(), filename)
+                            HashedScriptFileData = hashlib.sha256(await source.read()).hexdigest()
+
+                        """SCAT Process with OpenAI and Gemini LLMs"""
+                        if fileExt in SCRIPTFILEFORMATS:
+                            print(
+                                f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                            print(f"Converting script file {filename} to PDF...")
+                            pdf = FPDF()
+                            pdf.add_page()
+                            pdf.set_font("Arial", size=12)
+                            pdfpath = f"{filepath.split(".")[0]}.pdf"
+                            async with aiofiles.open(filepath, "r", encoding="utf-8") as SourceCodefile:
+                                pdf.multi_cell(0, 10,
+                                               (await SourceCodefile.read()).encode("latin-1", errors="replace").decode(
+                                                   "latin-1"))
+                                pdf.output(pdfpath)
+                            filepath = pdfpath
+                            print(f"Conversion successes!")
+                            flaggedMalicious = False
+                            if not flaggedMalicious:
+                                print(f"Start {GPTMODEL} scan on file {filename} for malware analysis...")
+                                GptScanResult = await openAISCAT(filepath)
+                                if GptScanResult.startswith(("True", "true")):
+                                    logMessage += f"FILE SCAN SUMMARY: {GPTMODEL} flagged as Malicious\n"
+                                    flaggedMalicious = True
+                                    print(f"{GPTMODEL} analyzed the content of being a potential malware!")
+                                    sendingMessage += f"{GPTMODEL} scan result: {GptScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
+
+                            if not flaggedMalicious:
+                                print(
+                                    f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
+                                GeminiScanResult = await GeminiSCAT(filepath, f"# ROLE:\n"
+                                                                              f"You are a cybersecurity analyst on a file for potential malware detection\n"
+                                                                              f"# ASK:\n"
+                                                                              f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
+                                                                              f"# RESPONSE FORMAT:\n"
+                                                                              f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+
+                                if GeminiScanResult.startswith(("True", "true")):
+                                    logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
+                                    flaggedMalicious = True
+                                    print(f"{GEMINIMODEL} analyzed the content of being a potential malware!")
+                                    sendingMessage += f"{GEMINIMODEL} scan result: {GeminiScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
+
+                            if flaggedMalicious:
+                                if HashedScriptFileData == RootFileHashed:
+                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                else:
+                                    await addingHashedData(HashedScriptFileData, fileExt, True)
+                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                    for HashedData in CompiledHashedMap:
+                                        if CompiledHashedMap[
+                                            HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                            await addingHashedData(HashedData, ".exe", True)
+                                            break
+                                print("Cleaning up process...")
+                                shutil.rmtree(mountPoint)
+                                print(f"Scan Process Finish!\n\n")
+                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                    del CURRENTSCANOPERATION[RootFileHashed]
+                                await logScanSession(f"{logMessage}\n\n")
+                                if len(sendingMessage) > 1500:
+                                    buffer = BytesIO()
+                                    buffer.write(sendingMessage.encode('utf-8'))
+                                    buffer.seek(0)
+                                    resultFile = discord.File(fp=buffer, filename="ScanResult.txt")
+                                    await ctx.followup.send(file=resultFile)
+                                else:
+                                    await ctx.followup.send(sendingMessage)
+                                return
+                            else:
+                                await addingHashedData(HashedScriptFileData, fileExt, False)
+                                for HashedData in CompiledHashedMap:
+                                    if CompiledHashedMap[
+                                        HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                        await addingHashedData(HashedData, ".exe", False)
+                                        break
+                                logMessage += f"FILE SCAN SUMMARY: File passed Virus Total, OpenAI and Gemini SCAT."
+                print("Cleaning up process...")
+                shutil.rmtree(mountPoint)
+                await addingHashedData(RootFileHashed, RootFileTrueExt, False)
+                sendingMessage += f"The file {file_to_be_scanned.filename} is safe to download!\n"
+                print(f"Scan Process Finish!\n\n")
+            if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                del CURRENTSCANOPERATION[RootFileHashed]
+        if len(sendingMessage) > 1500:
+            buffer = BytesIO()
+            buffer.write(sendingMessage.encode('utf-8'))
+            buffer.seek(0)
+            resultFile = discord.File(fp=buffer, filename="ScanResult.txt")
+            await ctx.followup.send(file=resultFile)
+        else:
+            await ctx.followup.send(sendingMessage)
+        await logScanSession(f"{logMessage}\n\n")
 
 
 @Cyberbot.event
 async def on_message_edit(before, after):
-
     global CURRENTSCANOPERATION
 
     await Cyberbot.process_commands(after)
@@ -2330,7 +3036,6 @@ async def on_message_edit(before, after):
     if after.channel.id in CyberBotConfigData["Non-monitoring-Channels"][str(after.guild.id)]:
         return
 
-
     if before.content != after.content:
         print("Re-edited Message Detected!")
         if after.content:
@@ -2352,7 +3057,8 @@ async def on_message_edit(before, after):
                 if URLs:
                     print("Detecting URLs in text content...")
                     if not CyberBotConfigData["Silent-Mode"][str(after.guild.id)] == "True":
-                        await after.reply("Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
+                        await after.reply(
+                            "Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
 
                     """URL access validation"""
                     resolvedUrls = []
@@ -2363,7 +3069,8 @@ async def on_message_edit(before, after):
                             logMessage += f"URL SCAN SUMMARY: URL {url} name query hinted potential directory transversal attack!\n\n"
                             print(f"URL {url} contains ../ attack pattern!\n\n")
                             await logScanSession(logMessage)
-                            await after.reply(f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
+                            await after.reply(
+                                f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
                             await after.delete()
                             return
                         if url.startswith("https://klipy.com/gifs/"):
@@ -2392,9 +3099,12 @@ async def on_message_edit(before, after):
                                     async with Cyberbot.session.get(url, headers=MAINHEADERS) as testValidURLResponse:
                                         if testValidURLResponse.status in range(400, 500):
                                             logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
-                                            print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
+                                            print(
+                                                f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
                                             print(f"URL {url} status code: {testValidURLResponse.status}")
-                                            await after.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
+                                            await after.reply(
+                                                f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}",
+                                                suppress_embeds=True)
                                         else:
                                             resolvedUrls.append(url)
                                 except Exception as error:
@@ -2422,11 +3132,15 @@ async def on_message_edit(before, after):
                             logMessage += "URL SCAN SUMMARY: Already been scanned as safe to visit\n"
                             print(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit")
                             if not CyberBotConfigData["Silent-Mode"][str(after.guild.id)] == "True":
-                                await after.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit", suppress_embeds=True)
+                                await after.reply(
+                                    f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit",
+                                    suppress_embeds=True)
                         elif await checkingFlaggedMaliciousData(hashedUrl, "URLs"):
                             logMessage += "URL SCAN SUMMARY: Already been scanned as malicious\n\n"
                             print(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious\n\n")
-                            await after.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious", suppress_embeds=True)
+                            await after.reply(
+                                f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious",
+                                suppress_embeds=True)
                             await after.delete()
                         else:
                             UrlScanResult = await virusTotalURLScan(url)
@@ -2438,7 +3152,8 @@ async def on_message_edit(before, after):
                                 logMessage += f"URL SCAN SUMMARY: VirusTotal flagged as malicious\n"
                                 print(f"URL {url} flagged malicious by Virus Total")
                                 await addingHashedData(hashedUrl, "URLs", True)
-                                await after.channel.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
+                                await after.channel.send(f"URL {url} is flagged malicious by Virus Total",
+                                                         suppress_embeds=True)
                                 await after.delete()
                             else:
                                 logMessage += f"URL SCAN SUMMARY: VirusTotal scanned as Clean/Safe To Visit\n"
@@ -2500,7 +3215,8 @@ async def on_message(message):
             if URLs:
                 print("Detecting URLs in text content...")
                 if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                    await message.reply("Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
+                    await message.reply(
+                        "Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
 
                 """URL access validation"""
                 resolvedUrls = []
@@ -2510,7 +3226,8 @@ async def on_message(message):
                         logMessage += f"URL SCAN SUMMARY: URL {url} name query hinted potential directory transversal attack!\n\n"
                         print(f"URL {url} contains ../ attack pattern!\n\n")
                         await logScanSession(logMessage)
-                        await message.reply(f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
+                        await message.reply(
+                            f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
                         await message.delete()
                         return
                     if url.startswith("https://klipy.com/gifs/"):
@@ -2541,7 +3258,9 @@ async def on_message(message):
                                         logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
                                         print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
                                         print(f"URL {url} status code: {testValidURLResponse.status}")
-                                        await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
+                                        await message.reply(
+                                            f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}",
+                                            suppress_embeds=True)
                                     else:
                                         resolvedUrls.append(url)
                             except Exception as error:
@@ -2569,11 +3288,15 @@ async def on_message(message):
                         logMessage += "URL SCAN SUMMARY: Already been scanned as safe to visit\n"
                         print(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit")
                         if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                            await message.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit", suppress_embeds=True)
+                            await message.reply(
+                                f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit",
+                                suppress_embeds=True)
                     elif await checkingFlaggedMaliciousData(hashedUrl, "URLs"):
                         logMessage += "URL SCAN SUMMARY: Already been scanned as malicious\n\n"
                         print(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious\n\n")
-                        await message.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious", suppress_embeds=True)
+                        await message.reply(
+                            f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious",
+                            suppress_embeds=True)
                         await message.delete()
                     else:
                         UrlScanResult = await virusTotalURLScan(url)
@@ -2585,7 +3308,8 @@ async def on_message(message):
                             logMessage += f"URL SCAN SUMMARY: VirusTotal flagged as malicious\n"
                             print(f"URL {url} flagged malicious by Virus Total")
                             await addingHashedData(hashedUrl, "URLs", True)
-                            await message.channel.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
+                            await message.channel.send(f"URL {url} is flagged malicious by Virus Total",
+                                                       suppress_embeds=True)
                             await message.delete()
                         else:
                             logMessage += f"URL SCAN SUMMARY: VirusTotal scanned as Clean/Safe To Visit\n"
@@ -2603,14 +3327,16 @@ async def on_message(message):
                 for attachment in message.attachments:
                     print(f"Scanning file {attachment.filename}...")
                     if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                        await message.reply(f"Cyberbot is scanning the file {attachment.filename} in this message, please do not download until Cyberbot scan is clear of malware.")
+                        await message.reply(
+                            f"Cyberbot is scanning the file {attachment.filename} in this message, please do not download until Cyberbot scan is clear of malware.")
                     logMessage += f"FILE ATTACHMENT: {attachment.filename}\n"
 
                     """Checking ../ attack in file name scheme"""
                     if "../" in attachment.filename:
                         logMessage += f"FILE SCAN SUMMARY: File name hinted potential directory transversal attack!\n"
                         print(f"File name {attachment.filename} hinted potential directory transversal attack!")
-                        await message.reply(f"The file {attachment.filename} name hinted potential directory transversal attack, also known as ../ attack!")
+                        await message.reply(
+                            f"The file {attachment.filename} name hinted potential directory transversal attack, also known as ../ attack!")
                         await message.delete()
                         print("Scan Process Finish!\n\n")
                         await logScanSession(f"{logMessage}\n\n")
@@ -2629,6 +3355,7 @@ async def on_message(message):
                             f"The file {attachment.filename} has a size {FullContentLength} bytes, which"
                             f" exceeding the file size limit that Cyberbot can support! The content won't be"
                             f" scanned!")
+                        await logScanSession(f"{logMessage}\n\n")
                     else:
                         async with Cyberbot.session.get(attachment.url, headers=MAINHEADERS) as response:
                             if not response.status in range(400, 500):
@@ -2636,16 +3363,20 @@ async def on_message(message):
                                 logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
 
                                 """Checking file true extension"""
-                                RootFileTrueExt = await checkingRealFileExtension(await response.read(), attachment.filename)
+                                RootFileTrueExt = await checkingRealFileExtension(await response.read(),
+                                                                                  attachment.filename)
                                 logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
 
                                 if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                    await message.reply(f"The file {attachment.filename} extension is: {RootFileTrueExt}")
+                                    await message.reply(
+                                        f"The file {attachment.filename} extension is: {RootFileTrueExt}")
                                 filePath = f"{filePath}{RootFileTrueExt}"
 
                                 """Checking if there is another subroutine scanning the same file"""
                                 if CURRENTSCANOPERATION.get(RootFileHashed, "") == "In Progress":
                                     print(f"File {attachment.filename} is currently being scanned by other subroutine!")
+                                    if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
+                                        await message.reply(f"A scan process for this file is under progressed...")
                                     while True:
                                         await asyncio.sleep(0)
                                         if not CURRENTSCANOPERATION.get(RootFileHashed, ""):
@@ -2656,17 +3387,22 @@ async def on_message(message):
                                 """Checking if file hashed signature already in clean or malicious data set"""
                                 if await checkingCleanData(RootFileHashed, "All Extension"):
                                     logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
-                                    print(f"File {attachment.filename} has already been checked and recorded in the clean data set!\n\n")
+                                    print(
+                                        f"File {attachment.filename} has already been checked and recorded in the clean data set!\n\n")
                                     if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                        await message.reply(f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
+                                        await message.reply(
+                                            f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
                                 elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
                                     logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
-                                    print(f"File {attachment.filename} has already been checked and recorded in the malicious file set!\n\n")
-                                    await message.reply(f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
+                                    print(
+                                        f"File {attachment.filename} has already been checked and recorded in the malicious file set!\n\n")
+                                    await message.reply(
+                                        f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
                                     await message.delete()
                                     print(f"Scan Process Finish!\n\n")
                                     if CURRENTSCANOPERATION.get(RootFileHashed, ""):
                                         del CURRENTSCANOPERATION[RootFileHashed]
+                                    await logScanSession(f"{logMessage}\n\n")
                                     return
                                 else:
 
@@ -2683,21 +3419,23 @@ async def on_message(message):
                                             f" that you do not know, I advice not to download the file and decrypt it!"
                                             f" If you have the key, you can decrypt the file but do not open it and send"
                                             f" again for Cyberbot to scan!")
-
-                                    if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
-                                        print("Downloading attachment content...")
-                                        async with aiofiles.open(filePath, "wb") as file:
-                                            await file.write(await response.read())
-                                        print("Attachment file downloaded!")
-                                        mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
-                                        os.mkdir(mountPoint)
-                                        print(f"Mount point {mountPoint} created!")
-                                        scanOperation = True
-                                        FILEDOWNLOADCOUNTER += 1
                                     else:
-                                        logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
-                                        print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
-                                        await message.reply(f"The file {attachment.filename} extension is outside of Cyberbot scope of file formats for malware analysis!")
+                                        if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
+                                            print("Downloading attachment content...")
+                                            async with aiofiles.open(filePath, "wb") as file:
+                                                await file.write(await response.read())
+                                            print("Attachment file downloaded!")
+                                            mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
+                                            os.mkdir(mountPoint)
+                                            print(f"Mount point {mountPoint} created!")
+                                            scanOperation = True
+                                            FILEDOWNLOADCOUNTER += 1
+                                        else:
+                                            logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
+                                            print(
+                                                "File attachment outside of Cyberbot scope of file formats for malware analysis!")
+                                            await message.reply(
+                                                f"The file {attachment.filename} extension is outside of Cyberbot scope of file formats for malware analysis!")
                             else:
                                 logMessage += "FILE SCAN SUMMARY: File attachment can not be downloaded by Cyberbot for malware analysis!\n"
                                 print(f"Cyberbot can not retrieve the attachment for scan!")
@@ -2706,13 +3444,15 @@ async def on_message(message):
 
                         if scanOperation:
                             print(f"Start scanning {attachment.filename} contents with Virus Total...")
-                            virusTotalResult = (await virusTotalFileScan(filePath)).split(":")
+                            virusTotalResult = await virusTotalFileScan(filePath)
                             if virusTotalResult != "File can't be scanned":
+                                virusTotalResult = virusTotalResult.split(":")
                                 virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
                                 if int(virusTotalResult[0]) > 0:
                                     logMessage += "FILE SCAN SUMMARY: File attachment flagged as Malicious by VirusTotal\n"
                                     print(f"Virus Total analyzed file {attachment.filename} as malicious!")
-                                    await message.reply(f"The file {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
+                                    await message.reply(
+                                        f"The file {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
                                     await message.delete()
                                     await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                     os.remove(filePath)
@@ -2721,6 +3461,7 @@ async def on_message(message):
                                     print(f"Scan Process Finish!\n\n")
                                     if CURRENTSCANOPERATION.get(RootFileHashed, ""):
                                         del CURRENTSCANOPERATION[RootFileHashed]
+                                    await logScanSession(f"{logMessage}\n\n")
                                     return
                                 logMessage += "VIRUS TOTAL SCAN: Safe To Download"
                             else:
@@ -2728,9 +3469,14 @@ async def on_message(message):
                                 print(f"VirusTotal can not scan the attachment!")
 
                             if RootFileTrueExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
-                                print("Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
-                                FileUncompressedSize = await asyncio.to_thread(ArchivesDiskImagesBombAnalysisAndExtraction,[filePath], mountPoint)
-                                if FileUncompressedSize.startswith(("Encrypted Error", "Path Transversal Attack", "Potential Archive Bomb!","Disk Image Error!", "Potential Recursive Archive Bomb Attack!", "Too many duplicated files!")):
+                                print(
+                                    "Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
+                                FileUncompressedSize = await asyncio.to_thread(
+                                    ArchivesDiskImagesBombAnalysisAndExtraction, [filePath], mountPoint)
+                                if FileUncompressedSize.startswith(
+                                        ("Encrypted Error", "Path Transversal Attack", "Potential Archive Bomb!",
+                                         "Disk Image Error!", "Potential Recursive Archive Bomb Attack!",
+                                         "Too many duplicated files!")):
                                     if FileUncompressedSize.startswith("Encrypted Error"):
                                         logMessage += f"FILE SCAN SUMMARY: File Attachment is an encrypted archive/disk file. Cyberbot can not scan encrypted content\n"
                                         print(f"Archive/Disk file encrypted!")
@@ -2759,7 +3505,8 @@ async def on_message(message):
                                     elif FileUncompressedSize.startswith("Disk Image Error!"):
                                         logMessage += f"FILE SCAN SUMMARY: File Attachment has a corrupted disk image\n"
                                         print(f"Archive/Disk file has corrupted disk image")
-                                        await message.reply(f"The file {attachment.filename} has a corrupted disk image!")
+                                        await message.reply(
+                                            f"The file {attachment.filename} has a corrupted disk image!")
                                     elif FileUncompressedSize.startswith("Potential Recursive Archive Bomb Attack!"):
                                         logMessage += f"FILE SCAN SUMMARY: File Attachment has more than 3 duplicated archive/disk files. Potential recursive archive/disk bomb attack\n"
                                         print(f"Archive/Disk file has more than 3 duplicated archive/disk files")
@@ -2779,27 +3526,13 @@ async def on_message(message):
                                     if not FileUncompressedSize.startswith("Encrypted Error"):
                                         await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                         await message.delete()
-                                    logMessage += "\n\n"
-                                    await logScanSession(logMessage)
                                     print("Cleaning up process...")
                                     shutil.rmtree(mountPoint)
                                     print(f"Scan Process Finish!\n\n")
                                     if CURRENTSCANOPERATION.get(RootFileHashed, ""):
                                         del CURRENTSCANOPERATION[RootFileHashed]
+                                    await logScanSession(f"{logMessage}\n\n")
                                     return
-
-                                def uncompressedFileStructure(path: str, indent=""):
-                                    name = os.path.basename(path)
-                                    result = ""
-                                    if os.path.isdir(path):
-                                        result += f"{indent}{name} (Directory)\n"
-                                        for entry in sorted(os.listdir(path)):
-                                            fullPath = os.path.join(path, entry)
-                                            result += uncompressedFileStructure(fullPath, indent + "\t\t")
-                                    else:
-                                        result += f"{indent}{name} (File)\n"
-
-                                    return result
 
                                 ufs = uncompressedFileStructure(mountPoint, indent="")
 
@@ -2812,10 +3545,11 @@ async def on_message(message):
                                         f"bomb!\nBegin the scanning process on the uncompressed content"
                                         f", which may take quite some time. There are {FileUncompressedSize.split('|')[1]}"
                                         f" duplicated content to be aware of!")
-                                    await message.reply(f"The Uncompressed File Structure of {attachment.filename} are:\n{ufs}")
+                                    await message.reply(
+                                        f"The Uncompressed File Structure of {attachment.filename} are:\n{ufs}")
 
-
-                                print(f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
+                                print(
+                                    f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
                                 for dirpath, _, filenames in os.walk(mountPoint):
                                     for filename in filenames:
                                         logMessage += f"UNCOMPRESSED FILE INSIDE ARCHIVE {attachment.filename}: {filename}\n"
@@ -2824,19 +3558,24 @@ async def on_message(message):
                                         async with aiofiles.open(filepath, mode="rb") as source:
                                             fileExt = await checkingRealFileExtension(await source.read(), filename)
                                             HashedFileData = hashlib.sha256(await source.read()).hexdigest()
-                                        print(f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                        print(
+                                            f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                         logMessage += f"SHA-256 HASH: {HashedFileData}\nFILE SIZE: {fileSize} bytes\nFILE EXT: {fileExt}\n"
 
                                         if await checkingCleanData(HashedFileData, "All Extension"):
-                                            print(f"File {filename} has already been checked and recorded in the clean data set!\n")
+                                            print(
+                                                f"File {filename} has already been checked and recorded in the clean data set!\n")
                                             logMessage += "FILE SCAN SUMMARY: File already scanned as Safe To Download\n"
                                             if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                                await message.reply(f"File {filename} inside archive/disk image {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
+                                                await message.reply(
+                                                    f"File {filename} inside archive/disk image {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
                                             os.remove(filepath)
                                         elif await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
                                             logMessage += "FILE SCAN SUMMARY: File already flagged Malicious\n"
-                                            print(f"File {filename} has already been checked and recorded in the malicious file set!")
-                                            await message.reply(f"File {filename} inside {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
+                                            print(
+                                                f"File {filename} has already been checked and recorded in the malicious file set!")
+                                            await message.reply(
+                                                f"File {filename} inside {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
                                             await message.delete()
                                             await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                             print("Cleaning up process...")
@@ -2844,28 +3583,31 @@ async def on_message(message):
                                             print(f"Scan Process Finish!\n\n")
                                             if CURRENTSCANOPERATION.get(RootFileHashed, ""):
                                                 del CURRENTSCANOPERATION[RootFileHashed]
+                                            await logScanSession(f"{logMessage}\n\n")
                                             return
                                         else:
                                             print(f"Start Virus Total Scan on {filename}...")
-                                            virusTotalResult = (await virusTotalFileScan(filepath)).split(":")
-                                            virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                                            if int(virusTotalResult[0]) > 0:
-                                                logMessage += "FILE SCAN SUMMARY: VirusTotal flagged as Malicious\n"
-                                                print(f"Virus Total analyzed file {filename} as malicious!")
-                                                await message.reply(f"File {filename} inside archive/disk image {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
-                                                await message.delete()
-                                                await addingHashedData(HashedFileData, fileExt, True)
-                                                await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                                logMessage += "\n\n"
-                                                await logScanSession(logMessage)
-                                                print("Cleaning up process...")
-                                                shutil.rmtree(mountPoint)
-                                                print(f"Scan Process Finish!\n\n")
-                                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                                    del CURRENTSCANOPERATION[RootFileHashed]
-                                                return
+                                            virusTotalResult = await virusTotalFileScan(filePath)
+                                            if virusTotalResult != "File can't be scanned":
+                                                virusTotalResult = virusTotalResult.split(":")
+                                                virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
+                                                if int(virusTotalResult[0]) > 0:
+                                                    logMessage += "FILE SCAN SUMMARY: VirusTotal flagged as Malicious\n"
+                                                    print(f"Virus Total analyzed file {filename} as malicious!")
+                                                    await message.reply(f"File {filename} inside archive/disk image {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
+                                                    await message.delete()
+                                                    await addingHashedData(HashedFileData, fileExt, True)
+                                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                                    print("Cleaning up process...")
+                                                    shutil.rmtree(mountPoint)
+                                                    print(f"Scan Process Finish!\n\n")
+                                                    if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                                        del CURRENTSCANOPERATION[RootFileHashed]
+                                                    await logScanSession(f"{logMessage}\n\n")
+                                                    return
                                             logMessage += "VIRUS TOTAL SCAN: Safe To Download"
-                                            if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(EXECUTABLEFORMATS):
+                                            if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(
+                                                    EXECUTABLEFORMATS):
                                                 await addingHashedData(HashedFileData, fileExt, False)
                                                 os.remove(filepath)
                             else:
@@ -2881,10 +3623,12 @@ async def on_message(message):
                                     async with aiofiles.open(filepath, "rb") as source:
                                         fileExt = await checkingRealFileExtension(await source.read(), filename)
                                         HashedCompiledFileData = hashlib.sha256(await source.read()).hexdigest()
-    
+
                                     if fileExt in EXECUTABLEFORMATS:
-                                        print(f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                                        outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint, filename)
+                                        print(
+                                            f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                        outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint,
+                                                                                 filename)
                                         if outputFilePath != "ERROR":
                                             async with aiofiles.open(outputFilePath, "rb") as file:
                                                 HashedDecompiledData = hashlib.sha256(await file.read()).hexdigest()
@@ -2901,30 +3645,31 @@ async def on_message(message):
 
                                     """SCAT Process with OpenAI and Gemini LLMs"""
                                     if fileExt in SCRIPTFILEFORMATS:
-                                        print(f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                        print(
+                                            f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                         print(f"Converting script file {filename} to PDF...")
                                         pdf = FPDF()
                                         pdf.add_page()
                                         pdf.set_font("Arial", size=12)
                                         pdfpath = f"{filepath.split(".")[0]}.pdf"
                                         async with aiofiles.open(filepath, "r", encoding="utf-8") as SourceCodefile:
-                                            pdf.multi_cell(0, 10, (await SourceCodefile.read()).encode("latin-1",errors="replace").decode("latin-1"))
+                                            pdf.multi_cell(0, 10, (await SourceCodefile.read()).encode("latin-1",
+                                                                                                       errors="replace").decode(
+                                                "latin-1"))
                                             pdf.output(pdfpath)
                                         filepath = pdfpath
                                         print(f"Conversion successes!")
                                         flaggedMalicious = False
                                         if not flaggedMalicious:
                                             print(f"Start {GPTMODEL} scan on file {filename} for malware analysis...")
-                                            GptScanResult = await openAISCAT(filepath, f"# ASK:\n"
-                                                                                       f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
-                                                                                       f"# RESPONSE FORMAT:\n"
-                                                                                       f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+                                            GptScanResult = await openAISCAT(filepath)
                                             if GptScanResult.startswith(("True", "true")):
                                                 logMessage += f"FILE SCAN SUMMARY: {GPTMODEL} flagged as Malicious\n"
                                                 flaggedMalicious = True
                                                 print(f"{GPTMODEL} analyzed the content of being a potential malware!")
                                                 if len(GptScanResult) > 1500:
-                                                    print(f"Scan result exceeding 1500 words, creating a txt file to send the report...")
+                                                    print(
+                                                        f"Scan result exceeding 1500 words, creating a txt file to send the report...")
                                                     buffer = BytesIO()
                                                     buffer.write(GptScanResult.encode('utf-8'))
                                                     buffer.seek(0)
@@ -2941,24 +3686,28 @@ async def on_message(message):
                                                         f" deleted!")
 
                                         if not flaggedMalicious:
-                                            print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
-                                            GeminiScanResult = await GeminiSCAT(filepath,f"# ROLE:\n"
-                                                                          f"You are a cybersecurity analyst on a file for potential malware detection\n"
-                                                                          f"# ASK:\n"
-                                                                          f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
-                                                                          f"# RESPONSE FORMAT:\n"
-                                                                          f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
-    
+                                            print(
+                                                f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
+                                            GeminiScanResult = await GeminiSCAT(filepath, f"# ROLE:\n"
+                                                                                          f"You are a cybersecurity analyst on a file for potential malware detection\n"
+                                                                                          f"# ASK:\n"
+                                                                                          f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
+                                                                                          f"# RESPONSE FORMAT:\n"
+                                                                                          f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+
                                             if GeminiScanResult.startswith(("True", "true")):
                                                 logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
                                                 flaggedMalicious = True
-                                                print(f"{GEMINIMODEL} analyzed the content of being a potential malware!")
+                                                print(
+                                                    f"{GEMINIMODEL} analyzed the content of being a potential malware!")
                                                 if len(GeminiScanResult) > 1500:
-                                                    print(f"Scan result exceeding 1500 words, creating a txt file to send the report...")
+                                                    print(
+                                                        f"Scan result exceeding 1500 words, creating a txt file to send the report...")
                                                     buffer = BytesIO()
                                                     buffer.write(GeminiScanResult.encode('utf-8'))
                                                     buffer.seek(0)
-                                                    resultFile = discord.File(fp=buffer, filename="GeminiScanResult.txt")
+                                                    resultFile = discord.File(fp=buffer,
+                                                                              filename="GeminiScanResult.txt")
                                                     await message.reply(
                                                         f"{GEMINIMODEL} scan result for file {os.path.basename(filepath)} suggested"
                                                         f" a potential malicious file, therefore it was deleted!",
@@ -2968,30 +3717,31 @@ async def on_message(message):
                                                         f"{GEMINIMODEL} scan result: {GeminiScanResult}\n\nThe file"
                                                         f" {os.path.basename(filepath)} was detected of being a"
                                                         f" potential malicious file, therefore it was deleted!")
-    
+
                                         if flaggedMalicious:
-                                            logMessage += "\n\n"
                                             if HashedScriptFileData == RootFileHashed:
                                                 await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                             else:
                                                 await addingHashedData(HashedScriptFileData, fileExt, True)
                                                 await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                                 for HashedData in CompiledHashedMap:
-                                                    if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                                    if CompiledHashedMap[
+                                                        HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
                                                         await addingHashedData(HashedData, ".exe", True)
                                                         break
-                                            await logScanSession(logMessage)
                                             await message.delete()
                                             print("Cleaning up process...")
                                             shutil.rmtree(mountPoint)
                                             print(f"Scan Process Finish!\n\n")
                                             if CURRENTSCANOPERATION.get(RootFileHashed, ""):
                                                 del CURRENTSCANOPERATION[RootFileHashed]
+                                            await logScanSession(f"{logMessage}\n\n")
                                             return
                                         else:
                                             await addingHashedData(HashedScriptFileData, fileExt, False)
                                             for HashedData in CompiledHashedMap:
-                                                if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                                if CompiledHashedMap[
+                                                    HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
                                                     await addingHashedData(HashedData, ".exe", False)
                                                     break
                                             logMessage += f"FILE SCAN SUMMARY: File passed Virus Total, OpenAI and Gemini SCAT."
@@ -3007,5 +3757,6 @@ async def on_message(message):
         else:
             logMessage += f"SCAN SUMMARY: Cyberbot detected the message but automation scan mode is disabled for this server, so no scan is done!\n\n"
             await logScanSession(logMessage)
+
 
 Cyberbot.run(BOTTOKEN)
