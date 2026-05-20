@@ -1,5 +1,5 @@
 # Cyberbot Overview
-A security scanner designed for continuous, automated threat monitoring across Discord servers — detecting malicious file attachments and URLs in real time.
+A Python-based security scanner designed for continuous, automated threat monitoring across Discord servers — detecting malicious file attachments and URLs in real time.
 -	**Multi-Engine Threat Detection** Heuristic and signature-based scanning powered by the VirusTotal REST API, aggregating results across dozens of antivirus engines to maximize detection coverage and minimize false negatives.
 
 - **Automated Binary Reverse Engineering** Static disassembly and decompilation of executable attachments via headless Ghidra integration, enabling deep inspection of suspicious binaries without manual analyst intervention.
@@ -45,3 +45,34 @@ A security scanner designed for continuous, automated threat monitoring across D
     ├── EncoderTransformers.py                    # The encoder-transformer architecture of the customized ML models
     └── env                                       # Change to .env, this file is where you store the important file paths and APIs to run Cyberbot
 ```
+
+# Required Python Dependencies, System Binaries and API
+| Python Dependency | Version | Source |
+|---|---|---|
+| discord-py | `== 2.5.2` | https://github.com/Rapptz/discord.py |
+| dotenv | `== 0.9.9` | https://github.com/pedroburon/dotenv |
+| filetype | `== 1.2.0` | https://github.com/h2non/filetype.py |
+| openai | `== 2.26.0` | https://github.com/openai/openai-python |
+| python-magic | `== 0.4.27` | http://github.com/ahupp/python-magic |
+| rarfile | `== 4.2` | https://github.com/markokr/rarfile |
+| aiofiles | `== 25.1.0` | https://github.com/Tinche/aiofiles |
+| aiocsv | `== 1.4.0` | https://github.com/MKuranowski/aiocsv |
+| numpy | `== 2.4.4` | https://numpy.org |
+| pandas | `== `3.0.2` | https://pandas.pydata.org |
+| matplotlib | `== `3.10.8` | https://matplotlib.org |
+| fpdf | `== `1.7.2` | https://github.com/reingart/pyfpdf |
+| google-genai | `== `1.66.0` | https://github.com/googleapis/python-genai |
+| transformers | `== 5.7.0` | https://github.com/huggingface/transformers |
+| torch | `== `2.11.0` | https://pytorch.org |
+
+| System Binaries | Version | Source |
+|---|---|---|
+| semgrep | `>= 1.157.0` | https://semgrep.dev |
+| 7z | `>= 17.05` | https://www.7-zip.org/download.html |
+| unar | `>= 1.10.7` | https://www.kali.org/tools/unar/ |
+| qemu-utils | `>= 10.0.2` | https://www.qemu.org/download/ |
+| hdiutil (Required if the OS Cyberbot running on is MacOS) | built-in | https://ss64.com/mac/hdiutil.html |
+
+
+
+
