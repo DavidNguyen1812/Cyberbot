@@ -18,29 +18,30 @@ A security scanner designed for continuous, automated threat monitoring across D
 
 # Repo Structure
 ```
-├── CycberbotGhidraProject
-├── DownloadDirectory
-├── Files
+├── CycberbotGhidraProject                        # Dedicated directory for Cyberbot to create temporary Ghidra Project during static disassembly and decompilation process
+├── DownloadDirectory                             # Dedicated directory for Cyberbot to temporary store file for analysis
+├── Files                                        
 │   ├── Configurations
-│   │   ├── CyberBotConfig.json
-│   │   └── OneTimeResetPasswordToken.json
+│   │   ├── CyberBotConfig.json                   # Cyberbot Configuration to securely store user admin account authentication and Discord server admin acess, chat channels in server that Cyberbot not authorized to monitor, and scanning functionality
+│   │   └── OneTimeResetPasswordToken.json        # Temporary stored a user requested password reset token
 │   ├── HashedSignatures
-│   │   ├── CleanSHA256Signatures.json
-│   │   └── MaliciousSHA256Signatures.json
+│   │   ├── CleanSHA256Signatures.json            # Stored the SHA256 hashes of all the files and URLs already been scanned by Cyberbot as safe
+│   │   └── MaliciousSHA256Signatures.json        # Stored the SHA256 hashes of all the files and URLs already been scanned by Cyberbot as malicious
 │   ├── LLM Usages
-│   │   ├── LLMMonthlyUsage.csv
-│   │   └── LLMYearlyUsage.csv
+│   │   ├── LLMMonthlyUsage.csv                   # Keep track of the cost of using external LLM model Gemini and OpenAi using input/output token metrics monthly 
+│   │   └── LLMYearlyUsage.csv                    # Keep track of the cost of using external LLM model Gemini and OpenAi using input/output token metrics yearly
 │   ├── Logs
-│   │   ├── CyberBotCronTaskLog.txt
-│   │   ├── CyberBotDiscordCommandsLog.txt
-│   │   ├── CyberbotURLAndFileScanLog.txt
-│   │   └── OpenAIandGeminiSCATResults.txt
-│   └── MLModels
-│       ├── CPU
-│       └── MPS
+│   │   ├── CyberBotCronTaskLog.txt               # Logging Cyberbot cron job events (e.g Updating LLM Usage chart daily, cleaning DMs with user that have admin accounts, .etc.)
+│   │   ├── CyberBotDiscordCommandsLog.txt        # Logging all the events a user execute Cyberbot application commands from Discord
+│   │   ├── CyberbotURLAndFileScanLog.txt         # Logging all the events Cyberbot scanning file or URL
+│   │   └── OpenAIandGeminiSCATResults.txt        # Logging all SCAT results from OpenAI and Gemini
+│   └── MLModels                                  # Stored all pre-trained Encoder-Transformers for phishing content detection and weak password
+│       ├── CPU                                   # Models trained using a CPU                                  
+│       └── MPS                                   # Models trained using Mac MPS
 └── PythonScripts
-    ├── GhidraDecompileScript
-    │   └── GhidraDecompile.py
-    ├── Cyberbot.py
-    ├── EncoderTransformers.py
-    └── env
+    ├── GhidraDecompileScript                    
+    │   └── GhidraDecompile.py                    # Instructions for Ghidrathon to disassemble a binary file
+    ├── Cyberbot.py                               # Cyberbot Source Code
+    ├── EncoderTransformers.py                    # The encoder-transformer architecture of the customized ML models
+    └── env                                       # Change to .env, this file is where you store the important file paths and APIs to run Cyberbot
+```
