@@ -208,9 +208,9 @@ def loadClassifierModel(modelPath, modelType, classificationTask, device='mps'):
     model = model.to(device)
     model.eval()  # Set to evaluation mode
 
-    print(f"✓ Model loaded from: {modelPath}")
-    print(f"✓ Model on device: {device}")
-    print(f"✓ Model in evaluation mode")
+    print(f"[PyTorch] Model loaded from: {modelPath}")
+    print(f"[PyTorch] Model on device: {device}")
+    print(f"[PyTorch] Model in evaluation mode")
     return model
 
 
