@@ -1,4 +1,5 @@
 # Cyberbot Overview
+
 A Python-based security scanner designed for continuous, automated threat monitoring across Discord servers — detecting malicious file attachments and URLs in real time.
 -	**Multi-Engine Threat Detection** Heuristic and signature-based scanning powered by the VirusTotal REST API, aggregating results across dozens of antivirus engines to maximize detection coverage and minimize false negatives.
 
@@ -17,6 +18,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 - **Recursive Archive and Disk Image Unpacking** with Protection Against Decompression Bombs and Path Traversal Exploits.
 
 # Repo Structure
+
 ```
 ├── CycberbotGhidraProject                        # Dedicated directory for Cyberbot to create temporary Ghidra Project during static disassembly and decompilation process
 ├── DownloadDirectory                             # Dedicated directory for Cyberbot to temporary store file for analysis
@@ -47,6 +49,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 ```
 
 # Required Python Dependencies, System Binaries and API
+
 | Python Dependency | Version | Source |
 |---|---|---|
 | discord-py | `== 2.5.2` | https://github.com/Rapptz/discord.py |
@@ -81,6 +84,20 @@ A Python-based security scanner designed for continuous, automated threat monito
 | OpenAI API Key | https://openai.com/api/ |
 | Google Gemini API Key | https://ai.google.dev/gemini-api/docs |
 | Virus Total API Key | https://docs.virustotal.com/reference/overview |
+
+# Discord Application Commands
+
+| Application Command | Purpose | Who can execute? | Restriction |
+|---|---|---|---|
+| /create_admin_account | Registering an admin account with Cyberbot, this include a valid email address for the registration confirmation | Every user in the server | Admin Account is uniquely tied to a single user and email address |
+| /create_admin_account | Registering an admin account with Cyberbot, this include a valid email address for the registration confirmation | Every user in the server | Admin Account is uniquely tied to a single user and email address |
+| /admin_log_in | Creating an 1 hour admin session in the server to enable access to Cyberbot configuration for the server | Any user that already has a registered admin account | The user must have admin access authorized by the server owner |
+| /admin_log_out | Terminating an admin session in the server | Any user that already has a registered admin account | The user must have admin access authorized by the server owner and currently have an 1 hour open session |
+| /request_password_reset_token | Requesting an email from Cyberbot for a password reset token with 3 minutes duration | Any user that already has a registered admin account | The reset token won't be sent if the user admin account password not reach the minimum password age policy of 3 hours |
+| /change_password | Updating the admin account password | Any user that already has a registered admin account | User would need to provide a password reset token to prove their identity |
+
+
+
 
 
 
