@@ -35,10 +35,10 @@ A security scanner designed for continuous, automated threat monitoring across D
 │   │   ├── CyberBotDiscordCommandsLog.txt
 │   │   ├── CyberbotURLAndFileScanLog.txt
 │   │   └── OpenAIandGeminiSCATResults.txt
-│   ├── MLModels
-│   │   ├── CPU
-│   │   └── MPS
-├── PythonScripts
+│   └── MLModels
+│       ├── CPU
+│       └── MPS
+└── PythonScripts
     ├── GhidraDecompileScript
     │   └── GhidraDecompile.py
     ├── Cyberbot.py
