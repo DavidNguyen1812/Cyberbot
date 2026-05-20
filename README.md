@@ -58,20 +58,30 @@ A Python-based security scanner designed for continuous, automated threat monito
 | aiofiles | `== 25.1.0` | https://github.com/Tinche/aiofiles |
 | aiocsv | `== 1.4.0` | https://github.com/MKuranowski/aiocsv |
 | numpy | `== 2.4.4` | https://numpy.org |
-| pandas | `== `3.0.2` | https://pandas.pydata.org |
-| matplotlib | `== `3.10.8` | https://matplotlib.org |
+| pandas | `== 3.0.2` | https://pandas.pydata.org |
+| matplotlib | `== 3.10.8` | https://matplotlib.org |
 | fpdf | `== `1.7.2` | https://github.com/reingart/pyfpdf |
-| google-genai | `== `1.66.0` | https://github.com/googleapis/python-genai |
+| google-genai | `== 1.66.0` | https://github.com/googleapis/python-genai |
 | transformers | `== 5.7.0` | https://github.com/huggingface/transformers |
 | torch | `== `2.11.0` | https://pytorch.org |
 
-| System Binaries | Version | Source |
+| System Binary | Version | Source |
 |---|---|---|
 | semgrep | `>= 1.157.0` | https://semgrep.dev |
 | 7z | `>= 17.05` | https://www.7-zip.org/download.html |
 | unar | `>= 1.10.7` | https://www.kali.org/tools/unar/ |
 | qemu-utils | `>= 10.0.2` | https://www.qemu.org/download/ |
 | hdiutil (Required if the OS Cyberbot running on is MacOS) | built-in | https://ss64.com/mac/hdiutil.html |
+
+| API Key | Source |
+|---|---|
+| Discord API key | https://docs.discord.com/developers/reference |
+| Klipy API Key | https://klipy.com |
+| Tenor API Key | https://tenor.com/gifapi/documentation |
+| OpenAI API Key | https://openai.com/api/ |
+| Google Gemini API Key | https://ai.google.dev/gemini-api/docs |
+| Virus Total API Key | https://docs.virustotal.com/reference/overview |
+
 
 
 
