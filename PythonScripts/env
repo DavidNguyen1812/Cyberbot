@@ -1,3 +1,4 @@
+# Change this file name to .env
 CYBERBOTCONFIGPATH=/path/to/Cyberbot/Files/Configurations/CyberBotConfig.json
 CYBERBOTDISCORDAPI=Your Discord API Key
 CYBERBOTROOTFILEDOWNLOADPATH=/path/to/Cyberbot/DownloadDirectory/
