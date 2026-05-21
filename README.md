@@ -85,18 +85,20 @@ A Python-based security scanner designed for continuous, automated threat monito
 | Google Gemini API Key | https://ai.google.dev/gemini-api/docs |
 | Virus Total API Key | https://docs.virustotal.com/reference/overview |
 
-# Discord Application Commands
+# Cyberbot Discord Application Commands Reference
 
-| Application Command | Purpose | Who can execute? | Restriction |
+| Application Command | Purpose | Who Can Execute | Restrictions |
 |---|---|---|---|
-| /create_admin_account | Registering an admin account with Cyberbot, this include a valid email address for the registration confirmation | Every user in the server | Admin Account is uniquely tied to a single user and email address |
-| /admin_log_in | Creating an 1 hour admin session in the server to enable access to Cyberbot configuration for the server | Any user that already has a registered admin account | The user must have admin access authorized by the server owner |
-| /admin_log_out | Terminating an admin session in the server | Any user that already has a registered admin account | The user must have admin access authorized by the server owner and currently have an 1 hour open session |
-| /request_password_reset_token | Requesting an email from Cyberbot for a password reset token with 3 minutes duration | Any user that already has a registered admin account | The reset token won't be sent if the user admin account password not reach the minimum password age policy of 3 hours or user admin account is being locked |
-| /change_password | Updating the admin account password | Any user that already has a registered admin account | User would need to provide a password reset token to prove their identity |
-| /adding_admins | Granting server member admin account access to be able to view and modify Cyberbot server configuration settings | Server Owner Only | The server member to be granted need to have an admin account already registered |
-| /removing_admins | Removing server member admin account access to the server | Server Owner Only | The server member must already have admin access |
-| /removing_admins | Removing server member admin account access to the server | Server Owner Only | The server member must already have admin access |
+| `/create_admin_account` | Registers a new administrator account with Cyberbot, requiring a valid email address for identity verification and registration confirmation | Any server member | Each administrator account is uniquely bound to a single user and email address |
+| `/admin_log_in` | Initiates an authenticated 1-hour administrative session, granting access to Cyberbot's server configuration and management controls | Any user with a registered administrator account | Requires administrator access privileges authorized by the server owner |
+| `/admin_log_out` | Terminates the current active administrative session | Any user with a registered administrator account | The user must hold server owner-authorized administrator privileges and have an active open session |
+| `/request_password_reset_token` | Requests a time-limited (3-minute) password reset token delivered to the account's registered email address | Any user with a registered administrator account | Token issuance is blocked if the account password has not satisfied the minimum password age policy of 3 hours, or if the account is currently locked |
+| `/change_password` | Updates the administrator account credentials | Any user with a registered administrator account | Requires a valid password reset token for identity verification prior to any credential change |
+| `/adding_admins` | Grants a server member administrative access, enabling them to view and modify Cyberbot's server configuration settings | Server Owner only | The designated server member must have an existing registered administrator account |
+| `/removing_admins` | Revokes a server member's administrative access privileges | Server Owner only | The designated server member must currently hold active administrative access |
+| `/viewing_cyberbot_configuration` | Retrieves and displays the current Cyberbot server configuration settings in read-only mode | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
+| `/cyberbot_config` | Modifies and applies changes to the current Cyberbot server configuration settings | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
+| `/non_monitoring_channel` | Adds or removes the current channel from Cyberbot's real-time monitoring exclusion list | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
 
 
 
