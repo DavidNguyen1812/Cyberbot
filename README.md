@@ -90,11 +90,13 @@ A Python-based security scanner designed for continuous, automated threat monito
 | Application Command | Purpose | Who can execute? | Restriction |
 |---|---|---|---|
 | /create_admin_account | Registering an admin account with Cyberbot, this include a valid email address for the registration confirmation | Every user in the server | Admin Account is uniquely tied to a single user and email address |
-| /create_admin_account | Registering an admin account with Cyberbot, this include a valid email address for the registration confirmation | Every user in the server | Admin Account is uniquely tied to a single user and email address |
 | /admin_log_in | Creating an 1 hour admin session in the server to enable access to Cyberbot configuration for the server | Any user that already has a registered admin account | The user must have admin access authorized by the server owner |
 | /admin_log_out | Terminating an admin session in the server | Any user that already has a registered admin account | The user must have admin access authorized by the server owner and currently have an 1 hour open session |
-| /request_password_reset_token | Requesting an email from Cyberbot for a password reset token with 3 minutes duration | Any user that already has a registered admin account | The reset token won't be sent if the user admin account password not reach the minimum password age policy of 3 hours |
+| /request_password_reset_token | Requesting an email from Cyberbot for a password reset token with 3 minutes duration | Any user that already has a registered admin account | The reset token won't be sent if the user admin account password not reach the minimum password age policy of 3 hours or user admin account is being locked |
 | /change_password | Updating the admin account password | Any user that already has a registered admin account | User would need to provide a password reset token to prove their identity |
+| /adding_admins | Granting server member admin account access to be able to view and modify Cyberbot server configuration settings | Server Owner Only | The server member to be granted need to have an admin account already registered |
+| /removing_admins | Removing server member admin account access to the server | Server Owner Only | The server member must already have admin access |
+| /removing_admins | Removing server member admin account access to the server | Server Owner Only | The server member must already have admin access |
 
 
 
