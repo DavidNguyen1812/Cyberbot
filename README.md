@@ -29,7 +29,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 ├── Files                                        
 │   ├── Configurations
 │   │   ├── CyberBotConfig.json                   # Cyberbot Configuration to securely store user admin account authentication and Discord server admin acess, chat channels in server that Cyberbot not authorized to monitor, and scanning functionality
-│   │   └── OneTimeResetPasswordToken.json        # Temporary stored a user requested password reset token
+│   │   └── OneTimeToken.json                     # Temporary stored a user requested password reset and email confirmation token
 │   ├── HashedSignatures
 │   │   ├── CleanSHA256Signatures.json            # Stored the SHA256 hashes of all the files and URLs already been scanned by Cyberbot as safe
 │   │   └── MaliciousSHA256Signatures.json        # Stored the SHA256 hashes of all the files and URLs already been scanned by Cyberbot as malicious
@@ -99,6 +99,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 | Application Command | Purpose | Who Can Execute | Restrictions |
 |---|---|---|---|
 | `/create_admin_account` | Registers a new administrator account with Cyberbot, requiring a valid email address for identity verification and registration confirmation | Any server member | Each administrator account is uniquely bound to a single user and email address |
+| `/confirm_admin_account` | Confirm the registration of a new administrator account with Cyberbot, requiring a valid email address and email confimration OTP code for final identity verification | Any server member | User must obtain the valid email confirmation code from invoking the /create_admin_account |
 | `/remove_admin_account` | Permanently deregisters an existing administrator account from Cyberbot, requiring valid email address and password confirmation for identity verification prior to account removal | Any user with a registered administrator account | Must authenticate to confirm the deregistration process |
 | `/admin_log_in` | Initiates an authenticated 1-hour administrative session, granting access to Cyberbot's server configuration and management controls | Any user with a registered administrator account | Requires administrator access privileges authorized by the server owner |
 | `/admin_log_out` | Terminates the current active administrative session | Any user with a registered administrator account | The user must hold server owner-authorized administrator privileges and have an active open session |
@@ -122,7 +123,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 
 ## Overview
 
-An administrator account is a fundamental security requirement for managing Cyberbot's server configuration settings. To register, a user must provide a valid email address and invoke the `/create_admin_account` application command.
+An administrator account is a fundamental security requirement for managing Cyberbot's server configuration settings. To register, a user must provide a valid email address and invoke the `/create_admin_account` and `/confirm_admin_account` application command.
 
 Upon successful registration, an account record will be persisted within **CyberBotConfig.json** adhering to the following schema:
 
@@ -239,7 +240,85 @@ Non-Monitor-Channels
 
 Users may permanently deregister their administrator account by providing the registered email address and current account password for identity verification. Account deletion is subject to the same authentication lockout policy — **7 consecutive failed attempts** will result in a **3-hour account lockout** before the operation may be retried.
 
+# Event Logging
 
+---
+
+## Overview
+
+Cyberbot maintains four dedicated plain-text (`.txt`) log files, each scoped to a distinct operational domain. These logs provide a comprehensive and auditable record of all system activity, supporting incident response, forensic analysis, and operational monitoring.
+
+---
+
+## Log Files
+
+### 1. `CyberBotCronTasksLog.txt`
+**Purpose:** Records all events associated with Cyberbot's scheduled background tasks and automated maintenance operations.
+
+Captured events include:
+
+| Event | Description |
+|-------|-------------|
+| **One-Time Token Expiry Sweep** | Periodic inspection and invalidation of expired one-time tokens stored in `/Configurations/OneTimeToken.json` |
+| **Password Expiry Enforcement** | Automated detection and flagging of administrator account passwords that have exceeded the maximum password age policy |
+| **External LLM Usage Metrics Update** | Periodic recording of aggregated usage statistics for external language model API calls, including total input/output token consumption, cumulative cost, and total successful model request counts |
+| **DM Chat Cleanup** | Daily purge of direct message chat history with users holding active administrator accounts |
+
+---
+
+### 2. `CyberBotDiscordCommandsLog.txt`
+**Purpose:** Records all invocations of Cyberbot's application commands across monitored Discord servers.
+
+Captured events include:
+
+| Event | Description |
+|-------|-------------|
+| **Command Invocation** | Logs each application command call, including the invoking user, target server, command name, and execution timestamp |
+| **Authentication Events** | Records administrative session initiations, terminations, and failed authentication attempts |
+| **Access Control Changes** | Tracks privilege grants and revocations issued via `/adding_admins` and `/removing_admins` |
+| **Configuration Changes** | Logs all modifications applied to Cyberbot's server configuration via `/cyberbot_config` |
+
+---
+
+### 3. `CyberbotURLAndFileScanLog.txt`
+**Purpose:** Records all file attachment and URL analysis events performed by Cyberbot, encompassing both automated real-time scanning and on-demand manual scans.
+
+Captured events include:
+
+| Event | Description |
+|-------|-------------|
+| **Real-Time File Scan** | Automated analysis of file attachments detected in monitored server channels when `Automation-Mode` is active |
+| **Real-Time URL Scan** | Automated analysis of URLs submitted in monitored server channels when `Automation-Mode` is active |
+| **Manual File Scan** | On-demand file analysis initiated via the `/manual_malware_scan` command |
+| **Threat Verdicts** | Records scan outcomes including threat classification, detection engine verdicts, file metadata, and remediation actions taken |
+
+---
+
+### 4. `OpenAIAndGeminiSCATResults.txt`
+**Purpose:** Archives the full results of static code analysis (SCAT) performed on script file attachments by external large language model providers — Google Gemini and OpenAI GPT.
+
+Captured events include:
+
+| Event | Description |
+|-------|-------------|
+| **Static Code Analysis Report** | Complete analysis output returned by the LLM provider for each submitted script file |
+| **Threat Indicators** | Identified obfuscated logic, suspicious code patterns, and potential exploitation techniques flagged during analysis |
+| **Model Attribution** | Records which model (Google Gemini or OpenAI GPT) produced each analysis result, along with the associated timestamp and token usage |
+
+---
+
+## Log File Summary
+
+| Log File | Scope | Primary Audience |
+|----------|-------|-----------------|
+| `CyberBotCronTasksLog.txt` | Scheduled tasks & background maintenance | System Administrator |
+| `CyberBotDiscordCommandsLog.txt` | Application command invocations & access control | Security Auditor / Server Owner |
+| `CyberbotURLAndFileScanLog.txt` | File & URL threat analysis results | Security Analyst / Incident Responder |
+| `OpenAIAndGeminiSCATResults.txt` | LLM-powered static code analysis reports | Security Analyst / Malware Researcher |
+
+---
+
+> **Note:** All log files are append-only and retained indefinitely to ensure a complete and tamper-evident audit trail. Administrators are advised to periodically archive and back up log files to prevent data loss.
 
 
 
