@@ -136,9 +136,10 @@ Upon successful registration, an account record will be persisted within **Cyber
     "Current Admin Session Period" : {"<Dictionary tracking active administrative sessions per server>"},
     "Last Time Logged In"          : "<DateTime of the most recent successful administrator authentication>",
     "Current Account Locked Out Period" : "<Remaining duration of the current account lockout, if applicable>",
-    "Failed Log In Attempts"       : "<Cumulative count of failed authentication attempts since account creation>",
+    "Failed Log In Attempts"       : "<Current number of failed authentication attempts>",
     "Locked Out History"           : ["<List of DateTime entries recording each account lockout occurrence>"],
     "Total Locked Out"             : "<Cumulative count of account lockouts since creation>",
+    "Total Failed Log In Attempts" : "<Cumulative count of failed authentication attempts since account creation>",
     "Accessible Servers"           : ["<List of Discord servers for which the account holds active administrative access>"],
     "Account Creation Date"        : "<DateTime of account creation>"
 }
