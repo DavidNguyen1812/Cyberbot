@@ -107,40 +107,127 @@ A Python-based security scanner designed for continuous, automated threat monito
 | `/list_supported_formats` | Retrieves and displays a comprehensive list of all file formats and content categories supported by Cyberbot's scanning and analysis engines | Any server member | N/A |
 | `/checking_file_true_format` | Determines the true file format of a submitted file by inspecting its magic bytes, identifying potential file extension spoofing or format mismatch attempts | Any server member | N/A |
 
-# Admin Account Details
+# Administrator Account Documentation
 
-**Overview**\
+---
 
-Having an admin accont is an essential security to manage Cyberbot's server configuration settings. To register for an admin account, user would need a valid email address and call the application command ```/create_admin_account```. Once registering an account, a dictionary of the account with be stored in **CyberBotConfig.json** as the following:
+## Overview
 
-```
- {
-    "User ID": <User Discord ID>,
-    "User Email": <User Email Address>,
-    "User Credential": <SHA512 Hash of the user password>,
-    "Credential Minimum Age": <This field is to enforce the password minimum age policy>,
-    "Credential Expiration Age": <This field is to enforce the password maximum age policy>,
-    "Previous Credentials Used": [A list of all the SHA512 Hash of the previous passwords to prevent password reuses],
-    "Current Admin Session Period": {A dictionary to keep track of all the current admin session per server},
-    "Last Time Logged In": <Date time format of last time the user logged in as an admin>,
-    "Current Account Locked Out Period": <Keep track of the remaining time the account currently locked>,
-    "Failed Log In Attempts": Keep track of the total failed authentications since account creation,
-    "Locked Out History": [A list that track the date time format of the time the account been locked out],
-    "Total Locked Out": Keep track of the total account locked out since creation,
-    "Accessible Servers": [A list that keep track of all the Discord server the account has access],
-    "Account Creation Date": <Date Time format of the account creation>
+An administrator account is a fundamental security requirement for managing Cyberbot's server configuration settings. To register, a user must provide a valid email address and invoke the `/create_admin_account` application command.
+
+Upon successful registration, an account record will be persisted within **CyberBotConfig.json** adhering to the following schema:
+
+```json
+{
+    "User ID"                      : "<User Discord ID>",
+    "User Email"                   : "<User Email Address>",
+    "User Credential"              : "<SHA-512 Hash of the user password>",
+    "Credential Minimum Age"       : "<Enforces the minimum password age policy>",
+    "Credential Expiration Age"    : "<Enforces the maximum password age policy>",
+    "Previous Credentials Used"    : ["<List of SHA-512 hashes of previously used passwords to prevent credential reuse>"],
+    "Current Admin Session Period" : {"<Dictionary tracking active administrative sessions per server>"},
+    "Last Time Logged In"          : "<DateTime of the most recent successful administrator authentication>",
+    "Current Account Locked Out Period" : "<Remaining duration of the current account lockout, if applicable>",
+    "Failed Log In Attempts"       : "<Cumulative count of failed authentication attempts since account creation>",
+    "Locked Out History"           : ["<List of DateTime entries recording each account lockout occurrence>"],
+    "Total Locked Out"             : "<Cumulative count of account lockouts since creation>",
+    "Accessible Servers"           : ["<List of Discord servers for which the account holds active administrative access>"],
+    "Account Creation Date"        : "<DateTime of account creation>"
 }
 ```
 
-**Security**\
+---
 
-Having a registered admin account will still fully allow the user to have administrative priviledge in the Discord server. The account must be granted access by the server owner via command ```/adding_admins``` or removed of access via command ```/removing_admins```. This ensure that Cyberbot is designed with a Discretionary Access Control.
+## Access Control
 
-Every account password has a maximum age of 6 months! Once the password is expired, Cyberbot will send the email reminder to the account owner for password change. 
+Possession of a registered administrator account does not implicitly grant administrative privileges within a Discord server. Access must be explicitly authorized by the server owner via the `/adding_admins` command and may be revoked at any time via the `/removing_admins` command. This design enforces a **Discretionary Access Control (DAC)** model, ensuring that access delegation remains under the authority of the server owner.
 
-In order to update account password, user must use the command ```/request_password_reset_token``` to recieve an email from Cyberbot for a temporary reset token that valid for 3 minutes. User can then use the command ```/change_password``` and provide the email and the reset token. User can select option to either customized the password or let Cyberbot select a nnew secure password and send an email about the password change. Having a customized password is **RECOMMENDED**. Once a new password has been set, user must wait for another 3 hours, before they can update the password again. This ensures user to not abuse the password update mechanism.
+> **Note:** Server owners with a registered administrator account are automatically granted administrative access across all Discord servers they own — no additional authorization step is required.
 
-Cyberbot password policy consisted of password length at least 12 characters, have mixed case ASCII letters and numbers, and contains special characters ```!@#$%&*_+=```.
+---
+
+## Password Policy
+
+All administrator account passwords must conform to the following requirements:
+
+- Minimum length of **12 characters**
+- Must contain **mixed-case ASCII letters and digits**
+- Must include at least one special character from the following set: `!@#$%&*_+=`
+- Maximum password age of **6 months** — upon expiration, Cyberbot will dispatch an automated email reminder to the account owner prompting a credential update
+
+Passwords are stored as **SHA-512 hashes**, salted using the user's Discord ID to ensure uniqueness and resistance against precomputed attacks.
+
+---
+
+## Password Reset & Update Procedure
+
+To update account credentials, the following procedure must be followed:
+
+1. Invoke `/request_password_reset_token` — Cyberbot will dispatch a time-limited reset token (valid for **3 minutes**) to the account's registered email address.
+2. Invoke `/change_password` — provide the registered email address and the issued reset token to authenticate the credential change request.
+3. Select a password update method:
+   - **Custom Password** *(Recommended)* — User-defined password subject to full policy validation.
+   - **Cyberbot-Generated Password** — Cyberbot generates a policy-compliant password and delivers it to the registered email address.
+
+> Following a successful password update, a mandatory **minimum password age of 3 hours** is enforced before any subsequent credential change is permitted. This measure mitigates abuse of the password update mechanism.
+
+### Custom Password Validation Pipeline
+
+When a user elects to define their own password, the submitted credential undergoes the following multi-layered validation process:
+
+| Step | Validation Check |
+|------|-----------------|
+| 1 | Verify the new password hash does not match the current active credential |
+| 2 | Verify the new password hash has not been used in any previous credential cycle |
+| 3 | Cross-reference against known data breach databases via the [HaveIBeenPwned API](https://haveibeenpwned.com/API/v3) |
+| 4 | Assess password strength using two pre-trained Encoder-Transformer models trained on a [common password dataset](https://github.com/Infinitode/PWLDS) |
+| 5 | Submit for final security verification via Google Gemini |
+
+---
+
+## Administrative Session Management
+
+All users, including server owners, must authenticate to establish a **1-hour administrative session** before gaining read or write access to Cyberbot's configuration. Administrative sessions are **server-scoped** — a session authenticated for one Discord server does not confer access to any other server.
+
+Upon **7 consecutive failed authentication attempts**, the account will be subjected to an automatic **3-hour lockout**, and an automated security notification will be dispatched to the account's registered email address.
+
+---
+
+## Server Configuration
+
+Cyberbot maintains an independent configuration profile per Discord server in which it is deployed. Authorized administrators may interact with the server configuration via the following commands:
+
+| Command | Access Level | Description |
+|---------|-------------|-------------|
+| `/viewing_cyberbot_configuration` | Read-Only | Retrieves and displays the current server configuration |
+| `/cyberbot_config` | Read-Write | Modifies and applies changes to the server configuration |
+
+### Configuration Parameters
+
+```
+Automation-Mode
+    Enables or disables Cyberbot's real-time threat scanning. When enabled, any file
+    attachment or URL submitted within a monitored server channel will be immediately
+    subjected to analysis. When disabled, Cyberbot will suspend all automated scanning activity.
+
+Silent-Mode
+    Controls Cyberbot's verbosity during real-time scanning operations. When enabled,
+    Cyberbot provides live scan progress notifications throughout the analysis process.
+    When disabled, Cyberbot operates silently in the background — suppressing all output
+    unless a threat is detected, at which point the malicious content is deleted and a
+    descriptive remediation message is posted in the channel.
+
+Non-Monitor-Channels
+    Defines an exclusion list of server channels exempt from Cyberbot's real-time scanning,
+    even when Automation-Mode is active. Channels can be added to or removed from this
+    exclusion list via the /non_monitoring_channel command.
+```
+
+---
+
+## Account Deregistration
+
+Users may permanently deregister their administrator account by providing the registered email address and current account password for identity verification. Account deletion is subject to the same authentication lockout policy — **7 consecutive failed attempts** will result in a **3-hour account lockout** before the operation may be retried.
 
 
 
