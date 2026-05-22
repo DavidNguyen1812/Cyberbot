@@ -107,6 +107,41 @@ A Python-based security scanner designed for continuous, automated threat monito
 | `/list_supported_formats` | Retrieves and displays a comprehensive list of all file formats and content categories supported by Cyberbot's scanning and analysis engines | Any server member | N/A |
 | `/checking_file_true_format` | Determines the true file format of a submitted file by inspecting its magic bytes, identifying potential file extension spoofing or format mismatch attempts | Any server member | N/A |
 
+# Admin Account Details
+
+**Overview**\
+
+Having an admin accont is an essential security to manage Cyberbot's server configuration settings. To register for an admin account, user would need a valid email address and call the application command ```/create_admin_account```. Once registering an account, a dictionary of the account with be stored in **CyberBotConfig.json** as the following:
+
+```
+ {
+    "User ID": <User Discord ID>,
+    "User Email": <User Email Address>,
+    "User Credential": <SHA512 Hash of the user password>,
+    "Credential Minimum Age": <This field is to enforce the password minimum age policy>,
+    "Credential Expiration Age": <This field is to enforce the password maximum age policy>,
+    "Previous Credentials Used": [A list of all the SHA512 Hash of the previous passwords to prevent password reuses],
+    "Current Admin Session Period": {A dictionary to keep track of all the current admin session per server},
+    "Last Time Logged In": <Date time format of last time the user logged in as an admin>,
+    "Current Account Locked Out Period": <Keep track of the remaining time the account currently locked>,
+    "Failed Log In Attempts": Keep track of the total failed authentications since account creation,
+    "Locked Out History": [A list that track the date time format of the time the account been locked out],
+    "Total Locked Out": Keep track of the total account locked out since creation,
+    "Accessible Servers": [A list that keep track of all the Discord server the account has access],
+    "Account Creation Date": <Date Time format of the account creation>
+}
+```
+
+**Security**\
+
+Having a registered admin account will still fully allow the user to have administrative priviledge in the Discord server. The account must be granted access by the server owner via command ```/adding_admins``` or removed of access via command ```/removing_admins```. This ensure that Cyberbot is designed with a Discretionary Access Control.
+
+Every account password has a maximum age of 6 months! Once the password is expired, Cyberbot will send the email reminder to the account owner for password change. 
+
+In order to update account password, user must use the command ```/request_password_reset_token``` to recieve an email from Cyberbot for a temporary reset token that valid for 3 minutes. User can then use the command ```/change_password``` and provide the email and the reset token. User can select option to either customized the password or let Cyberbot select a nnew secure password and send an email about the password change. Having a customized password is **RECOMMENDED**. Once a new password has been set, user must wait for another 3 hours, before they can update the password again. This ensures user to not abuse the password update mechanism.
+
+Cyberbot password policy consisted of password length at least 12 characters, have mixed case ASCII letters and numbers, and contains special characters ```!@#$%&*_+=```.
+
 
 
 
