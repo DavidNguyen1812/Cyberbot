@@ -73,6 +73,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 | google-genai | `== 1.66.0` | https://github.com/googleapis/python-genai |
 | transformers | `== 5.7.0` | https://github.com/huggingface/transformers |
 | torch | `== `2.11.0` | https://pytorch.org |
+| email-validator | `== `2.3.0` | https://github.com/JoshData/python-email-validator |
 
 | System Binary | Version | Source |
 |---|---|---|
