@@ -1,5 +1,7 @@
 # Cyberbot Overview
 
+---
+
 A Python-based security scanner designed for continuous, automated threat monitoring across Discord servers — detecting malicious file attachments and URLs in real time.
 -	**Multi-Engine Threat Detection** Heuristic and signature-based scanning powered by the VirusTotal REST API, aggregating results across dozens of antivirus engines to maximize detection coverage and minimize false negatives.
 
@@ -18,6 +20,8 @@ A Python-based security scanner designed for continuous, automated threat monito
 - **Recursive Archive and Disk Image Unpacking** with Protection Against Decompression Bombs and Path Traversal Exploits.
 
 # Repo Structure
+
+---
 
 ```
 ├── CycberbotGhidraProject                        # Dedicated directory for Cyberbot to create temporary Ghidra Project during static disassembly and decompilation process
@@ -49,6 +53,8 @@ A Python-based security scanner designed for continuous, automated threat monito
 ```
 
 # Required Python Dependencies, System Binaries and API
+
+---
 
 | Python Dependency | Version | Source |
 |---|---|---|
@@ -86,6 +92,8 @@ A Python-based security scanner designed for continuous, automated threat monito
 | Virus Total API Key | https://docs.virustotal.com/reference/overview |
 
 # Cyberbot Discord Application Commands Reference
+
+---
 
 | Application Command | Purpose | Who Can Execute | Restrictions |
 |---|---|---|---|
