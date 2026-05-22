@@ -87,8 +87,6 @@ A Python-based security scanner designed for continuous, automated threat monito
 
 # Cyberbot Discord Application Commands Reference
 
-# Cyberbot Application Commands Reference
-
 | Application Command | Purpose | Who Can Execute | Restrictions |
 |---|---|---|---|
 | `/create_admin_account` | Registers a new administrator account with Cyberbot, requiring a valid email address for identity verification and registration confirmation | Any server member | Each administrator account is uniquely bound to a single user and email address |
