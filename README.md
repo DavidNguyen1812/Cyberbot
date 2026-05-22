@@ -99,6 +99,14 @@ A Python-based security scanner designed for continuous, automated threat monito
 | `/viewing_cyberbot_configuration` | Retrieves and displays the current Cyberbot server configuration settings in read-only mode | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
 | `/cyberbot_config` | Modifies and applies changes to the current Cyberbot server configuration settings | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
 | `/non_monitoring_channel` | Adds or removes the current channel from Cyberbot's real-time monitoring exclusion list | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
+| `/get_list_of_accessible_servers` | Viewing all the server that the user has admin access | Any user with a registered administrator account | N/A |
+| `/semgrep_vulnerability_scan` | Vulnerability scanning Semgrepo | Any server member | N/A |
+| `/phishing_email_scan` | Initiating pre-trained encoder transformers for phishing content detection | Any server member | N/A |
+| `/manual_malware_scan` | Analyzing a file for any malicious attributes | Any server member | N/A |
+| `/list_supported_formats` | Displaying all file formats and categories that Cyberbot can scan | Any server member | N/A |
+| `/checking_file_true_format` | Checking the file true extension by it magic bytes | Any server member | N/A |
+
+
 
 
 
