@@ -147,7 +147,33 @@ To install on a machine with Linux OS:
    ```
    java --version
    ```
-8. Download the official zip file of the latest version of ghidra from here
+8. Download the official zip file of the latest version of ghidra from [here](https://github.com/NationalSecurityAgency/ghidra/releases)
+9. Unzip the file to /Applications (You may have to create the folder)
+    ```unzip /path/to/ghidra.zip -d /Applications```
+10. Linux version does not have buildNatives, so we will need to run gradle to install buildNatives for Ghidra to unlock it full decompilation capabilities.
+    ```
+    cd <Your Unzipped Ghidra Directory>/support/gradle/ ./gradlew buildNatives
+    ```
+11. Verify ghidraRun successfully by opening Ghidra GUI
+12. Download the official zip file of the latest version of Ghidrathon from [here](https://github.com/mandiant/Ghidrathon/releases)
+13. Unzip  Ghidrarun zip file to /tmp
+    ```unzip /path/to/Ghidrathon.zip -d /tmp```
+14. Using the python interpreter and virtual environment that running Cyberbot, run the following commands
+    ```
+    pip install -r  /tmp/Ghidrathon-vx.x.x/requirements.txt
+    python /tmp/Ghidrathon-vx.x.x/ghidrathon_configure.py /Applications/ghidra_x.x.x_PUBLIC
+    ```
+15. Verify ghidrathon.save exist in /Applications/ghidra_x.x.x_PUBLIC with the correct python interpreter you configured
+    ```
+    cat /Applications/ghidra_x.x.x_PUBLIC/ghidrathon.save
+    ```
+16. Unzip the final Ghidrathon zip file to /Applications/ghidra_x.x.x_PUBLIC
+    ```
+    unzip /tmp/Ghidrathon-vx.x.x/Ghidrathon-vx.x.x.zip -d /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Extensions/
+    ```
+17. Disable PyGhidra, which will prevent Ghidrathon extension to work with python3
+    ```mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra_Disabled```
+
 # Cyberbot Discord Application Commands Reference
 
 ---
