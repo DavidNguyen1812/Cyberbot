@@ -96,83 +96,231 @@ A Python-based security scanner designed for continuous, automated threat monito
 
 ---
 
+## Overview
+
+This guide provides step-by-step installation instructions for the external system binaries required by Cyberbot's threat analysis pipeline. Ensure all binaries are correctly installed and verified before deploying Cyberbot.
+
+---
+
+## Table of Contents
+
+- [Semgrep](#semgrep)
+- [Ghidra & Ghidrathon](#ghidra--ghidrathon)
+  - [Linux Installation](#linux-installation)
+  - [macOS Installation](#macos-installation)
+
+---
+
 ## Semgrep
 
-The open source python-based vulneraiblity scanning engine that scan the file attachment upload to Cyberbot via command `/semgrep_vulnerability_scan`.
+**Description:** Semgrep is an open-source, Python-based static analysis engine used by Cyberbot to perform vulnerability scanning on file attachments submitted via the `/semgrep_vulnerability_scan` command.
 
-To install on a machine with Linux OS:
-1. ```pip install semgrep```
+---
 
-2. Create a symbolic link to the install semgrep and pysemgrep binaries to /usr/bin
-    ```
-    sudo ln -s ~/.local/bin/semgrep /usr/bin/semgrep
-    sudo ln -s ~/.local/bin/pysemgrep /usr/bin/pysemgrep
-    ```
-3. Verify semgrep exist
-    ```
-    semgrep --version
-    ```
+### Linux
 
-To install on a machine with MacOS:
-1. ```brew install semgrep```
-2. Verify semgrep exist
-   ```
-   semgrep --version
-   ```
+**1. Install Semgrep via pip:**
+```bash
+pip install semgrep
+```
 
-## Ghidra
+**2. Create symbolic links to expose the Semgrep binaries system-wide:**
+```bash
+sudo ln -s ~/.local/bin/semgrep /usr/bin/semgrep
+sudo ln -s ~/.local/bin/pysemgrep /usr/bin/pysemgrep
+```
 
-The open source reverse engineering engine that enable to diassemble a binaries for later static analysis with external LLMs Google Gemini and OpenAI GPT
+**3. Verify the installation:**
+```bash
+semgrep --version
+```
 
-To install on a machine with Linux OS:
-1. Mannually install Orcale java zip file from [here](https://www.oracle.com/java/technologies/downloads/)
-2. Choose a compatible CPU architecture for your Linux machine
-3. Create a folder in /usr/lib/jvm with root priviledge for java to be able to access globally by the OS
-   ```
-   sudo mkdir /usr/lib/jvm
-   ```
-4. Move the installed zip file and unzipped the file to the newly created jvm folder
-   sudo unzip /path/to/zip -d /usr/lib/jvm
-5. Set important environment variables
-   ```
-   sudo nano /etc/environment
-   JAVA_HOME="usr/lib/jvm/jdk-(your downloaded version)“
-    PATH="$PATH:$JAVA_HOME/bin“
-   ```
-6. Use update-alternatives
-   ```
-   sudo update-alternatives —install “/usr/bin/java“ “java“ “usr/lib/jvm/jdk<version>/bin/java“ 1
-   ```
-7. Verify java is installed
-   ```
-   java --version
-   ```
-8. Download the official zip file of the latest version of ghidra from [here](https://github.com/NationalSecurityAgency/ghidra/releases)
-9. Unzip the file to /Applications (You may have to create the folder)
-    ```unzip /path/to/ghidra.zip -d /Applications```
-10. Linux version does not have buildNatives, so we will need to run gradle to install buildNatives for Ghidra to unlock it full decompilation capabilities.
-    ```
-    cd <Your Unzipped Ghidra Directory>/support/gradle/ ./gradlew buildNatives
-    ```
-11. Verify ghidraRun successfully by opening Ghidra GUI
-12. Download the official zip file of the latest version of Ghidrathon from [here](https://github.com/mandiant/Ghidrathon/releases)
-13. Unzip  Ghidrarun zip file to /tmp
-    ```unzip /path/to/Ghidrathon.zip -d /tmp```
-14. Using the python interpreter and virtual environment that running Cyberbot, run the following commands
-    ```
-    pip install -r  /tmp/Ghidrathon-vx.x.x/requirements.txt
-    python /tmp/Ghidrathon-vx.x.x/ghidrathon_configure.py /Applications/ghidra_x.x.x_PUBLIC
-    ```
-15. Verify ghidrathon.save exist in /Applications/ghidra_x.x.x_PUBLIC with the correct python interpreter you configured
-    ```
-    cat /Applications/ghidra_x.x.x_PUBLIC/ghidrathon.save
-    ```
-16. Unzip the final Ghidrathon zip file to /Applications/ghidra_x.x.x_PUBLIC
-    ```
-    unzip /tmp/Ghidrathon-vx.x.x/Ghidrathon-vx.x.x.zip -d /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Extensions/
-    ```
-17. Disable PyGhidra, which will prevent Ghidrathon extension to work with python3
-    ```mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra_Disabled```
+---
+
+### macOS
+
+**1. Install Semgrep via Homebrew:**
+```bash
+brew install semgrep
+```
+
+**2. Verify the installation:**
+```bash
+semgrep --version
+```
+
+---
+
+## Ghidra & Ghidrathon
+
+**Description:** Ghidra is an open-source reverse engineering framework developed by the National Security Agency (NSA) that enables binary disassembly and decompilation. Cyberbot leverages Ghidra in conjunction with the **Ghidrathon** Python extension to perform automated static analysis on executable file attachments, with results subsequently submitted to Google Gemini and OpenAI GPT for LLM-assisted analysis.
+
+> **Prerequisites:**
+> - Oracle Java **>= 17.0.0** is required before proceeding with the Ghidra installation.
+> - Ghidrathon must be configured against the same Python interpreter and virtual environment used to run Cyberbot.
+
+---
+
+### Linux Installation
+
+#### Step 1 — Install Oracle Java
+
+**1. Download the Oracle Java JDK zip archive** for your CPU architecture from the [Oracle Java Downloads](https://www.oracle.com/java/technologies/downloads/) page.
+
+**2. Create a dedicated JVM directory** to allow the JDK to be accessible system-wide:
+```bash
+sudo mkdir -p /usr/lib/jvm
+```
+
+**3. Extract the JDK archive** to the newly created directory:
+```bash
+sudo unzip /path/to/jdk.zip -d /usr/lib/jvm
+```
+
+**4. Configure the required environment variables** by editing the system environment file:
+```bash
+sudo nano /etc/environment
+```
+Append the following entries:
+```
+JAVA_HOME="/usr/lib/jvm/jdk-<version>"
+PATH="$PATH:$JAVA_HOME/bin"
+```
+
+**5. Register the Java binary** with the `update-alternatives` system:
+```bash
+sudo update-alternatives --install "/usr/bin/java" "java" "/usr/lib/jvm/jdk-<version>/bin/java" 1
+```
+
+**6. Verify the Java installation:**
+```bash
+java --version
+```
+
+---
+
+#### Step 2 — Install Ghidra
+
+**7. Download the latest Ghidra release** zip archive from the [Ghidra Releases](https://github.com/NationalSecurityAgency/ghidra/releases) page.
+
+**8. Extract the archive** to the `/Applications` directory (create it if it does not exist):
+```bash
+unzip /path/to/ghidra.zip -d /Applications
+```
+
+**9. Build the native components** required for full decompilation capabilities.
+
+> **Note:** The Linux distribution of Ghidra does not ship with pre-built native binaries. The `buildNatives` Gradle task must be executed manually to unlock complete decompilation functionality.
+
+```bash
+cd /Applications/ghidra_x.x.x_PUBLIC/support/gradle/
+./gradlew buildNatives
+```
+
+**10. Verify the Ghidra installation** by launching the Ghidra GUI:
+```bash
+/Applications/ghidra_x.x.x_PUBLIC/ghidraRun
+```
+
+---
+
+#### Step 3 — Install Ghidrathon
+
+**11. Download the latest Ghidrathon release** zip archive from the [Ghidrathon Releases](https://github.com/mandiant/Ghidrathon/releases) page.
+
+**12. Extract the Ghidrathon archive** to a temporary working directory:
+```bash
+unzip /path/to/Ghidrathon.zip -d /tmp
+```
+
+**13. Install the required Python dependencies** and configure Ghidrathon against the Cyberbot virtual environment:
+```bash
+pip install -r /tmp/Ghidrathon-vx.x.x/requirements.txt
+python /tmp/Ghidrathon-vx.x.x/ghidrathon_configure.py /Applications/ghidra_x.x.x_PUBLIC
+```
+
+**14. Verify that the Ghidrathon configuration file** was generated with the correct Python interpreter path:
+```bash
+cat /Applications/ghidra_x.x.x_PUBLIC/ghidrathon.save
+```
+
+**15. Deploy the Ghidrathon extension** into the Ghidra Extensions directory:
+```bash
+unzip /tmp/Ghidrathon-vx.x.x/Ghidrathon-vx.x.x.zip -d /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Extensions/
+```
+
+**16. Disable the PyGhidra extension** to prevent conflicts with the Ghidrathon Python 3 integration:
+```bash
+mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra \
+   /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra_Disabled
+```
+
+---
+
+### macOS Installation
+
+#### Step 1 — Install Oracle Java
+
+**1. Install Oracle Java (>= 17.0.0)** by following the official [macOS Java Installation Guide](https://www.java.com/en/download/help/mac_install.html).
+
+---
+
+#### Step 2 — Install Ghidra
+
+**2. Download the latest Ghidra release** zip archive from the [Ghidra Releases](https://github.com/NationalSecurityAgency/ghidra/releases) page.
+
+**3. Extract the archive** to the `/Applications` directory:
+```bash
+unzip /path/to/ghidra.zip -d /Applications
+```
+
+---
+
+#### Step 3 — Install Ghidrathon
+
+**4. Download the latest Ghidrathon release** zip archive from the [Ghidrathon Releases](https://github.com/mandiant/Ghidrathon/releases) page.
+
+**5. Extract the Ghidrathon archive** to a temporary working directory:
+```bash
+unzip /path/to/Ghidrathon.zip -d /tmp
+```
+
+**6. Install the required Python dependencies** and configure Ghidrathon against the Cyberbot virtual environment:
+```bash
+pip install -r /tmp/Ghidrathon-vx.x.x/requirements.txt
+python /tmp/Ghidrathon-vx.x.x/ghidrathon_configure.py /Applications/ghidra_x.x.x_PUBLIC
+```
+
+**7. Verify that the Ghidrathon configuration file** was generated with the correct Python interpreter path:
+```bash
+cat /Applications/ghidra_x.x.x_PUBLIC/ghidrathon.save
+```
+
+**8. Deploy the Ghidrathon extension** into the Ghidra Extensions directory:
+```bash
+unzip /tmp/Ghidrathon-vx.x.x/Ghidrathon-vx.x.x.zip -d /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Extensions/
+```
+
+**9. Disable the PyGhidra extension** to prevent conflicts with the Ghidrathon Python 3 integration:
+```bash
+mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra \
+   /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra_Disabled
+```
+
+---
+
+## Installation Summary
+
+| Binary | Linux | macOS | Purpose |
+|--------|-------|-------|---------|
+| **Semgrep** | `pip install semgrep` | `brew install semgrep` | Static vulnerability scanning |
+| **Oracle Java** | Manual JDK zip extraction | Official macOS installer | Ghidra runtime dependency |
+| **Ghidra** | Manual zip extraction + `buildNatives` | Manual zip extraction | Binary disassembly & decompilation |
+| **Ghidrathon** | Manual configuration via `ghidrathon_configure.py` | Manual configuration via `ghidrathon_configure.py` | Python 3 scripting bridge for Ghidra |
+
+---
+
+> **Important:** Replace all instances of `x.x.x` and `<version>` placeholders throughout this guide with the actual version numbers corresponding to your downloaded releases.
 
 # Cyberbot Discord Application Commands Reference
 
