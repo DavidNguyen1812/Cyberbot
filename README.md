@@ -550,8 +550,260 @@ Captured events include:
 
 > **Note:** All log files are append-only and retained indefinitely to ensure a complete and tamper-evident audit trail. Administrators are advised to periodically archive and back up log files to prevent data loss.
 
+# Real-Time Threat Analysis Pipeline
 
+---
 
+## Overview
+
+Cyberbot's real-time threat analysis pipeline is an automated, event-driven security scanning system that activates upon detection of any file attachment or URL submitted within a monitored Discord server channel. The pipeline performs a layered, multi-engine analysis — encompassing hash signature lookups, VirusTotal multi-engine scanning, archive bomb detection, binary reverse engineering, and LLM-assisted static code analysis — before issuing a final threat verdict.
+
+---
+
+## Pipeline Trigger Conditions
+
+The real-time pipeline is activated when **all** of the following conditions are satisfied:
+
+| Condition | Requirement |
+|-----------|-------------|
+| **Message Author** | Must not be Cyberbot itself |
+| **Channel Type** | Must not be a Direct Message channel |
+| **Automation-Mode** | Must be set to `True` for the origin server |
+| **Channel Exclusion** | The origin channel must not be listed in `Non-Monitor-Channels` |
+| **Content** | Message must contain at least one URL or file attachment |
+
+If `Automation-Mode` is `False`, the event is logged with a notation that automated scanning is disabled and no analysis is performed.
+
+---
+
+## Pipeline Architecture
+
+```
+Message Received
+       │
+       ▼
+┌─────────────────────────────┐
+│   Pre-Flight Validation     │  ── Ignore bots, DMs, excluded channels
+└────────────┬────────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│   Server Config Bootstrap   │  ── Initialise server config defaults if new server
+└────────────┬────────────────┘
+             │
+      ┌──────┴──────┐
+      ▼             ▼
+ URL Pipeline   File Pipeline
+```
+
+---
+
+## Stage 1 — Pre-Flight Validation & Server Configuration Bootstrap
+
+Before any scanning begins, Cyberbot performs the following initialization checks:
+
+1. **Bot Self-Message Guard** — Discards any message originating from Cyberbot itself to prevent recursive processing.
+2. **Direct Message Guard** — Discards messages received via Direct Message channels, which are outside the scope of server monitoring.
+3. **Server Configuration Bootstrap** — If the origin server is newly detected, Cyberbot initializes its configuration defaults:
+   - `Non-Monitor-Channels` → Empty exclusion list
+   - `Silent-Mode` → `False` (verbose mode enabled)
+   - `Automation-Mode` → `True` (real-time scanning enabled)
+   - The updated configuration is persisted to `CyberBotConfig.json`.
+4. **Channel Exclusion Check** — If the origin channel is present in the server's `Non-Monitor-Channels` list, the message is immediately discarded and no scanning is performed.
+
+---
+
+## Stage 2 — URL Scanning Pipeline
+
+Activated when one or more URLs are detected in the message content.
+
+### Step 2.1 — URL Extraction & Deduplication
+All URLs matching the `https?://` scheme are extracted from the message content via regex pattern matching. Duplicate URLs are removed to prevent redundant scan operations.
+
+### Step 2.2 — Path Traversal Detection
+Each extracted URL is inspected for `../` sequences (URL-decoded) that may indicate a **directory traversal attack** targeting the host web server. Any URL containing such patterns is immediately flagged, the message is deleted, and the event is logged.
+
+### Step 2.3 — URL Resolution & Accessibility Validation
+Each URL is resolved and validated prior to submission to VirusTotal:
+
+| URL Type | Handling |
+|----------|----------|
+| **Klipy GIF URLs** (`klipy.com/gifs/`) | Resolved to the underlying direct GIF URL via Klipy API |
+| **Tenor GIF URLs** (`tenor.com/view`) | Resolved to the underlying direct GIF URL via Tenor API |
+| **Standard URLs** | Validated via HTTP HEAD/GET request; URLs returning `4xx` status codes are rejected |
+
+Unresolvable or inaccessible URLs are reported to the channel and excluded from further scanning.
+
+### Step 2.4 — Concurrent Scan Deduplication
+Before submitting a URL to VirusTotal, Cyberbot computes the SHA-256 hash of the URL and checks the `CURRENTSCANOPERATION` registry. If an identical URL is already being processed by a concurrent coroutine, the current coroutine suspends and waits for the in-progress scan to complete before proceeding.
+
+### Step 2.5 — Local Hash Signature Lookup
+The URL SHA-256 hash is cross-referenced against Cyberbot's local scan history:
+
+- **Known Safe** → Reports the URL as previously verified safe. No VirusTotal API call is made.
+- **Known Malicious** → Reports the URL as previously flagged malicious, deletes the message immediately.
+- **Unknown** → Proceeds to VirusTotal submission.
+
+### Step 2.6 — VirusTotal URL Scan
+Unknown URLs are submitted to the VirusTotal API for multi-engine analysis:
+
+- **Malicious verdict** (`malicious count > 0`) → URL is flagged, added to the local malicious hash store, and the message is deleted.
+- **Clean verdict** (`malicious count = 0`) → URL is added to the local clean hash store and reported as safe.
+- **Scan error** → Reported to the channel; no hash record is created.
+
+---
+
+## Stage 3 — File Attachment Scanning Pipeline
+
+Activated when one or more file attachments are detected in the message. Each attachment is processed individually and sequentially through the following stages.
+
+### Step 3.1 — Path Traversal Detection
+The attachment filename is inspected for `../` sequences indicative of a **path traversal attack**. Flagged filenames result in immediate message deletion and event logging.
+
+### Step 3.2 — File Size Validation
+The attachment content length is retrieved via HTTP HEAD request. Files exceeding the **300 MB** size threshold are rejected as outside Cyberbot's supported scan size limit.
+
+### Step 3.3 — File Download & True Format Identification
+The attachment is downloaded and its **true file format** is determined by inspecting its **magic bytes** — independent of the declared file extension — to detect potential extension spoofing or format mismatch attempts. The SHA-256 hash of the raw file content is computed for subsequent lookups.
+
+### Step 3.4 — Concurrent Scan Deduplication
+Identical to Step 2.4 — the file SHA-256 hash is checked against the `CURRENTSCANOPERATION` registry to prevent duplicate concurrent scans of the same file.
+
+### Step 3.5 — Local Hash Signature Lookup
+The file SHA-256 hash is cross-referenced against Cyberbot's local scan history:
+
+- **Known Safe** → Reports the file as previously verified safe. No further scanning is performed.
+- **Known Malicious** → Reports the file as previously flagged malicious and deletes the message immediately.
+- **Unknown** → Proceeds through the full scanning pipeline.
+
+### Step 3.6 — Encrypted File Detection
+Files identified as encrypted (based on true file format) are flagged as unscannnable. Cyberbot issues an advisory message recommending the recipient exercise caution, and recommends the file be re-submitted after decryption if it is intended to be legitimate.
+
+### Step 3.7 — Format Scope Validation
+Files with formats outside of Cyberbot's supported scope of analysis are reported as unscannable and excluded from further processing. Supported formats proceed to download and mount point preparation.
+
+### Step 3.8 — VirusTotal File Scan
+The downloaded file is submitted to the VirusTotal API for multi-engine file analysis. The scan result is reported in the following format:
+
+```
+<Malicious> Malicious, <Suspicious> Suspicious, <Harmless> Harmless, <Undetected> Undetected
+```
+
+- **Malicious verdict** (`malicious count > 0`) → File is flagged, added to the local malicious hash store, message is deleted, and temporary files are cleaned up.
+- **Clean verdict** → Pipeline continues to archive/disk image analysis.
+- **Scan error** → Noted in the log; pipeline continues.
+
+---
+
+## Stage 4 — Archive & Disk Image Bomb Analysis
+
+Activated when the file is identified as an **archive or disk image format**.
+
+### Step 4.1 — Extraction & Bomb Detection
+The archive or disk image is extracted to a dedicated mount point. The extraction engine inspects for the following threat conditions:
+
+| Threat Condition | Description | Action |
+|-----------------|-------------|--------|
+| **Encrypted Archive** | Archive contains encrypted content that cannot be inspected | Advisory message issued; no hash record created |
+| **Path Traversal Attack** | Extracted file paths contain `../` sequences | Message deleted; flagged as malicious |
+| **Archive/Disk Bomb** | Uncompressed size exceeds **32 GB** threshold | Message deleted; flagged as malicious |
+| **Corrupted Disk Image** | Disk image cannot be successfully parsed or mounted | Reported to channel |
+| **Recursive Archive Bomb** | More than 3 nested duplicate archive/disk files detected | Message deleted; flagged as malicious |
+| **Duplicate Content Bomb** | Excessive duplicate files detected within the compressed content | Message deleted; flagged as malicious |
+
+### Step 4.2 — Uncompressed Content Scanning
+If the archive passes all bomb detection checks, its extracted contents are individually scanned:
+
+1. The uncompressed file structure is enumerated and reported.
+2. Each extracted file is hashed (SHA-256) and cross-referenced against the local hash signature store.
+3. **Known Safe** files are removed from the mount point and skipped.
+4. **Known Malicious** files trigger immediate parent archive deletion and pipeline termination.
+5. **Unknown** files are submitted to VirusTotal for individual file analysis.
+
+---
+
+## Stage 5 — Executable Binary Reverse Engineering
+
+Activated for all files identified as **compiled executable formats** within the mount point.
+
+### Step 5.1 — Ghidra Decompilation
+Each executable binary is submitted to the headless Ghidra reverse engineering engine for automated disassembly and decompilation. The decompiled output is written to a designated output file path within the mount point.
+
+### Step 5.2 — Decompiled Output Hashing
+The SHA-256 hash of each decompiled output file is computed and stored in a `CompiledHashedMap`, which maintains a mapping of `compiled binary hash → decompiled script hash`. This map is used in Stage 6 to correlate LLM analysis verdicts back to their originating binary.
+
+---
+
+## Stage 6 — LLM-Assisted Static Code Analysis (SCAT)
+
+Activated for all files identified as **script file formats** within the mount point, including decompiled outputs produced in Stage 5.
+
+### Step 6.1 — Script-to-PDF Conversion
+Each script file is converted to PDF format prior to LLM submission, ensuring consistent document formatting across all supported script types.
+
+### Step 6.2 — OpenAI GPT Static Analysis
+The PDF is submitted to OpenAI GPT with a cybersecurity analyst system prompt instructing the model to assess the script for malicious patterns. The model responds with:
+- `True` — Potential malware detected → File is flagged as malicious.
+- `False` — No malicious patterns identified → Proceeds to Gemini analysis.
+
+If the scan result exceeds 1,500 characters, it is delivered as a `.txt` file attachment to the Discord channel.
+
+### Step 6.3 — Google Gemini Static Analysis
+If OpenAI GPT returns a clean verdict, the PDF is submitted to Google Gemini for an independent static analysis pass under the same cybersecurity analyst role prompt. The model responds with:
+- `True` — Potential malware detected → File is flagged as malicious.
+- `False` — No malicious patterns identified → File is recorded as clean.
+
+---
+
+## Stage 7 — Final Verdict & Cleanup
+
+### Malicious Verdict
+If any stage issues a malicious verdict:
+1. The SHA-256 hash of the flagged file (and its parent archive, if applicable) is recorded in the local malicious hash store.
+2. The associated compiled binary hash (via `CompiledHashedMap`) is also flagged if applicable.
+3. The originating Discord message is deleted.
+4. The mount point and all temporary files are purged.
+5. The scan session is written to `CyberbotURLAndFileScanLog.txt`.
+
+### Clean Verdict
+If all stages return a clean verdict:
+1. The SHA-256 hash of the file is recorded in the local clean hash store.
+2. The mount point and all temporary files are purged.
+3. A safe-to-download confirmation is posted to the channel (if `Silent-Mode` is `False`).
+4. The scan session is written to `CyberbotURLAndFileScanLog.txt`.
+
+---
+
+## Pipeline Summary
+
+```
+Message Detected
+        │
+        ├──► URL(s) Found
+        │         │
+        │         ├── Path Traversal Check
+        │         ├── URL Resolution & Accessibility Validation
+        │         ├── Concurrent Scan Deduplication
+        │         ├── Local Hash Signature Lookup
+        │         └── VirusTotal Multi-Engine URL Scan
+        │
+        └──► File Attachment(s) Found
+                  │
+                  ├── Path Traversal Check (Filename)
+                  ├── File Size Validation (≤ 300 MB)
+                  ├── File Download & Magic Byte Identification
+                  ├── Concurrent Scan Deduplication
+                  ├── Local Hash Signature Lookup
+                  ├── Encrypted File Detection
+                  ├── Format Scope Validation
+                  ├── VirusTotal Multi-Engine File Scan
+                  ├── Archive/Disk Image Bomb Detection & Extraction
+                  │         └── Extracted Content → VirusTotal Scan
+                  ├── Ghidra Executable Decompilation
+                  └── LLM Static Code Analysis (OpenAI GPT → Google Gemini)
+                            │
+                            └── Final Verdict → Hash Store Update → Cleanup → Log
+```
 
 
 
