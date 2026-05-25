@@ -92,6 +92,62 @@ A Python-based security scanner designed for continuous, automated threat monito
 | Google Gemini API Key | https://ai.google.dev/gemini-api/docs |
 | Virus Total API Key | https://docs.virustotal.com/reference/overview |
 
+# System Binaries Installation Guide
+
+---
+
+## Semgrep
+
+The open source python-based vulneraiblity scanning engine that scan the file attachment upload to Cyberbot via command `/semgrep_vulnerability_scan`.
+
+To install on a machine with Linux OS:
+1. ```pip install semgrep```
+
+2. Create a symbolic link to the install semgrep and pysemgrep binaries to /usr/bin
+    ```
+    sudo ln -s ~/.local/bin/semgrep /usr/bin/semgrep
+    sudo ln -s ~/.local/bin/pysemgrep /usr/bin/pysemgrep
+    ```
+3. Verify semgrep exist
+    ```
+    semgrep --version
+    ```
+
+To install on a machine with MacOS:
+1. ```brew install semgrep```
+2. Verify semgrep exist
+   ```
+   semgrep --version
+   ```
+
+## Ghidra
+
+The open source reverse engineering engine that enable to diassemble a binaries for later static analysis with external LLMs Google Gemini and OpenAI GPT
+
+To install on a machine with Linux OS:
+1. Mannually install Orcale java zip file from [here](https://www.oracle.com/java/technologies/downloads/)
+2. Choose a compatible CPU architecture for your Linux machine
+3. Create a folder in /usr/lib/jvm with root priviledge for java to be able to access globally by the OS
+   ```
+   sudo mkdir /usr/lib/jvm
+   ```
+4. Move the installed zip file and unzipped the file to the newly created jvm folder
+   sudo unzip /path/to/zip -d /usr/lib/jvm
+5. Set important environment variables
+   ```
+   sudo nano /etc/environment
+   JAVA_HOME="usr/lib/jvm/jdk-(your downloaded version)“
+    PATH="$PATH:$JAVA_HOME/bin“
+   ```
+6. Use update-alternatives
+   ```
+   sudo update-alternatives —install “/usr/bin/java“ “java“ “usr/lib/jvm/jdk<version>/bin/java“ 1
+   ```
+7. Verify java is installed
+   ```
+   java --version
+   ```
+8. Download the official zip file of the latest version of ghidra from here
 # Cyberbot Discord Application Commands Reference
 
 ---
