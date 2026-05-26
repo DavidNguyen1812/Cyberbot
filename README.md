@@ -805,7 +805,22 @@ Message Detected
                             └── Final Verdict → Hash Store Update → Cleanup → Log
 ```
 
+# Limitations & Future Work
 
+---
 
+1. If a source file token count exceeding OpenAI or Gemini context window or TPM, the content will not be analyzed by the models and given a clean verdict.
+
+2. If you are using a free Virus Total API, then the latency of Virus Total analyses is gonna be average around **40s-80s**. The premium API would be needed, if you wish to furher extended this Discord bot into an enterprise level security tool. 
+
+3. The pre-trained phishing email encoder-transformer were one of my ML project can be found [here](https://github.com/DavidNguyen1812/PhishingEmailDetector). I am new to machine learning, and most of the model architecture was written by Claude, under careful supervision.
+
+4. The pre-trained password strenght encoder-transformer has the same based architecture as the phishing email. The dataset used to train the models can be found [here](https://github.com/Infinitode/PWLDS).
+
+5. Cyberbot does not have any advance web search capability, so during the URL Resolution & Accessibility Validation phrase, if the the URL response status code are in the error range 400-500, then the URL will not be scan. Usually, a malicious website should be designed with less restriction in order to attract as much victim as possible, but that just an assumption.
+
+6. Cyberbot can be susceptible to fileless virus, so make sure you run Cyberobt on a dedicated device like a raspberry pi, AWS EC2 instance, with a Golden Image backup.
+
+7. The asychronous programing of Cyberbot did not integrate with semaphore to limit the number of coroutines that can access a shared resource or run a specific section of code simultaneously. This is essential to not overload the CPU with too many tasks resulting from many file/url scan operations.
 
 
