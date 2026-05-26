@@ -27,7 +27,7 @@ for systembinary in systembinaries:
 
 """Python Dependencies Check"""
 print("Checking Python Dependencies")
-dependencies = ["discord-py", "dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep"]
+dependencies = ["discord-py", "dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep", "email-validator"]
 for dependency in dependencies:
     result = subprocess.run(["pip", "show", dependency], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if "not found" in f"{result.stderr} {result.stdout}":
@@ -69,6 +69,7 @@ from EncoderTransformers import loadClassifierModel, Prediction
 from aiocsv import AsyncWriter
 from zoneinfo import ZoneInfo
 from urllib.parse import unquote
+from email_validator import validate_email, EmailNotValidError
 
 import json
 import zipfile
@@ -122,7 +123,7 @@ CYBERBOTSCOPEOFORMATS = DISKIMAGEANDARCHIVEFORMATS + ENCRYPTEDFILEFORMATS + EXEC
 CYBERBOTCONFIG = os.environ.get("CYBERBOTCONFIGPATH")
 DOWNLOADINGDIRPATH = os.environ.get("CYBERBOTROOTFILEDOWNLOADPATH")
 CYBERBOTCOMMANDLOG = os.environ.get("CYBERBOTCOMMANDLOGPATH")
-RESETPASSWORDTOKENPATH = os.environ.get("RESETPASSWORDTOKENPATH")
+ONETIMETOKENPATH = os.environ.get("ONETIMETOKENPATH")
 CLEANSIGNATURESPATH = os.environ.get("CYBERBOTCLEANSIGNATURES")
 MALISCIOUSSIGNATUREPATH = os.environ.get("CYBERBOTMALICIOUSSIGNATURES")
 SCATLOG = os.environ.get("CYBERBOTSCATLOGS")
@@ -222,7 +223,7 @@ Cyberbot = CyberBot(command_prefix='/', intents=intents)
 ConfigLock = asyncio.Lock()
 ScanLogLock = asyncio.Lock()
 CommandLogLock = asyncio.Lock()
-ResetTokenLock = asyncio.Lock()
+OneTimeTokenLock = asyncio.Lock()
 CleanSignatureLock = asyncio.Lock()
 MaliciousSignatureLock = asyncio.Lock()
 ScatLogLock = asyncio.Lock()
@@ -368,20 +369,30 @@ async def CronTaskLog(logData: str) -> None:
 
 @tasks.loop(minutes=1)  # A task every 1 minute
 async def checking_expired_tokens():
-    # print(f"Checking for expired password reset token...")
-    async with ResetTokenLock:
-        async with aiofiles.open(RESETPASSWORDTOKENPATH, "r") as file:
+    # print(f"Checking for expired one time token...")
+    async with OneTimeTokenLock:
+        async with aiofiles.open(ONETIMETOKENPATH, "r") as file:
             resetTokens = json.loads(await file.read())
     delete_tokens = []
-    for tokenID in resetTokens:
-        if time.time() >= resetTokens[tokenID][1]:
-            print(f"Reset token {resetTokens[tokenID][0]} for {tokenID} expired.")
+    for tokenID in resetTokens["Password Reset Token"]:
+        if time.time() >= resetTokens["Password Reset Token"][tokenID][1]:
+            print(f"One Time Password Reset Token {resetTokens["Password Reset Token"][tokenID][0]} for {tokenID} expired.")
+            delete_tokens.append(tokenID)
+    for tokenID in resetTokens["Email Confirmation Token"]:
+        if time.time() >= resetTokens["Email Confirmation Token"][tokenID][1]:
+            print(f"Email Confirmation Token {resetTokens["Email Confirmation Token"][tokenID][0]} for {tokenID} expired.")
             delete_tokens.append(tokenID)
     for tokenID in delete_tokens:
-        print(f"Removing token associated with {tokenID}...")
-        del resetTokens[tokenID]
-    async with ResetTokenLock:
-        async with aiofiles.open(RESETPASSWORDTOKENPATH, "w") as file:
+        print(f"Removing one time token associated with {tokenID}...")
+        if resetTokens["Password Reset Token"].get(tokenID):
+            await CronTaskLog(f"{time.ctime(time.time())}\nCronTask: REMOVING EXPIRED ONE TIME PASSWORD RESET TOKEN\nOne Time Token {resetTokens["Password Reset Token"][tokenID][0]} for {tokenID} expired\nSTATUS: SUCCESS")
+            del resetTokens["Password Reset Token"][tokenID]
+        elif resetTokens["Email Confirmation Token"].get(tokenID):
+            await CronTaskLog(f"{time.ctime(time.time())}\nCronTask: REMOVING EXPIRED ONE TIME EMAIL CONFIRMATION TOKEN\nOne Time Token {resetTokens["Email Confirmation Token"][tokenID][0]} for {tokenID} expired\nSTATUS: SUCCESS")
+            del resetTokens["Email Confirmation Token"][tokenID]
+        print(f"Removal Success!!!\n\n")
+    async with OneTimeTokenLock:
+        async with aiofiles.open(ONETIMETOKENPATH, "w") as file:
             await file.write(json.dumps(resetTokens, indent=4))
     # print(f"Process Finished!\n\n")
 
@@ -647,7 +658,7 @@ async def isTenorURLValid(gifURL: str) -> str:
         return "Invalid"
 
 
-def sendEmail(subject: str, content: str, receiver_email: str) -> str:
+def sendEmail(subject: str, content: str, receiver_email: str) -> Literal["Email sent successfully!", "Email sent unsuccessfully!"]:
     """
     Description: Sending email to registered user with admin account
     :param subject: Email subject
@@ -657,6 +668,13 @@ def sendEmail(subject: str, content: str, receiver_email: str) -> str:
     """
     # Credit https://www.youtube.com/watch?v=g_j6ILT-X0k
     sender_email = "noreplycyberbot7777@gmail.com"  # You need to create a your own google account for Cyberbot
+
+    # Validate the destination email is valid
+    try:
+        validate_email(receiver_email, check_deliverability=True)
+    except EmailNotValidError as error:
+        print(f"[Cyberbot Email System] Error sending email: {error}")
+        return "Email sent successfully!"
 
     # Create a multipart message and set headers
     email = EmailMessage()
@@ -672,11 +690,12 @@ def sendEmail(subject: str, content: str, receiver_email: str) -> str:
             server.login(sender_email, os.environ.get("CYBERBOTEMAILCRED"))
             server.sendmail(sender_email, receiver_email, email.as_string())
     except smtplib.SMTPRecipientsRefused as clientError:
-        print(f"Error sending email to {receiver_email}: {clientError}")
+        print(f"[Cyberbot Email System] Error sending email to {receiver_email}: {clientError}")
         return "Email sent unsuccessfully!"
     except Exception as other_error:
-        print(f"Error sending email to {receiver_email}: {other_error}")
+        print(f"[Cyberbot Email System] Error sending email to {receiver_email}: {other_error}")
         return "Email sent unsuccessfully!"
+    print(f"[Cyberbot Email System] Automation Email sent to {receiver_email} succesfully!")
     return "Email sent successfully!"
 
 
@@ -1732,17 +1751,47 @@ def ghidraDecompile(filepath: str, mountPoint: str, filename: str) -> str:
         return "ERROR"
 
 
+
 @Cyberbot.tree.command(
     name="list_supported_formats",
     description="List all supported file formats that Cyberbot can scan"
 )
 async def list_supported_formats(ctx):
-    await ctx.response.send_message(f"Cyberbot can scan the following file formats:\n\n"
-                                    f"Archive and Disk Image: {DISKIMAGEANDARCHIVEFORMATS}\n\n"
-                                    f"Executable: {EXECUTABLEFORMATS}\n\n"
-                                    f"Script Files: BASH script, ZShell and all common programming scripts\n\n"
-                                    f"Document Files: {DOCUMENTFILEFORMATS}\n\n"
-                                    f"Media Files: {PICTUREFORMATS + AUDIOFORMATS + VIDEOFORMATS}")
+    print(f"User {ctx.user.name} initiated /list_supported_formats command")
+    await ctx.response.defer(ephemeral=True)
+    for adminAccount in CyberBotConfigData["Admins"]:
+        if ctx.user.id == adminAccount["User ID"]:
+            if ctx.guild.id in adminAccount["Accessible Servers"] or ctx.user.id == ctx.guild.owner.id:
+                if str(ctx.guild.id) in adminAccount["Current Admin Session Period"]:
+                    if time.time() < adminAccount["Current Admin Session Period"][str(ctx.guild.id)]:
+                        await LoggingCommandBeingExecuted(ctx.user.name,f"/list_supported_formats\nCommand Status: Approved/The list of Cyberbot supported file formats has been displayed to user")
+                        await ctx.followup.send(f"Cyberbot can scan the following file formats:\n\n"
+                                                f"Archive and Disk Image: {DISKIMAGEANDARCHIVEFORMATS}\n\n"
+                                                f"Executable: {EXECUTABLEFORMATS}\n\n"
+                                                f"Script Files: BASH script, ZShell and all common programming scripts\n\n"
+                                                f"Document Files: {DOCUMENTFILEFORMATS}\n\n"
+                                                f"Media Files: {PICTUREFORMATS + AUDIOFORMATS + VIDEOFORMATS}")
+                        print(f"The list of Cyberbot supported file formats has been displayed to user!\n\n")
+                    else:
+                        del adminAccount["Current Admin Session Period"][str(ctx.guild.id)]
+                        await LoggingCommandBeingExecuted(ctx.user.name, f"/list_supported_formats\nCommand Status: Denied/Admin session expired")
+                        await ctx.followup.send(f"Your admin session with this server has expired! Please logging in again.")
+                        print(f"User admin session expired!\n\n")
+                        async with ConfigLock:
+                            async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
+                                await file.write(json.dumps(CyberBotConfigData, indent=4))
+                else:
+                    await LoggingCommandBeingExecuted(ctx.user.name,f"/list_supported_formats\nCommand Status: Denied/User need to log in as an admin")
+                    await ctx.followup.send(f"You need to use /admin_log_in to log in as an admin in this server to execute this command!")
+                    print(f"User {ctx.user.name} need to log in as an admin!\n\n")
+            else:
+                await LoggingCommandBeingExecuted(ctx.user.name,f"/list_supported_formats\nCommand Status: Denied/User does not have admin account access to the server!")
+                await ctx.followup.send(f"You do not have an admin account access to the server, please contact the server owner {ctx.guild.owner.name} to add your admin account access to the server!")
+                print(f"User {ctx.user.name} not authorized to execute the command!\n\n")
+            return
+    await LoggingCommandBeingExecuted(ctx.user.name,f"/list_supported_formats\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+    await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+    print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
 @Cyberbot.tree.command(
@@ -1763,7 +1812,7 @@ async def get_list_of_accessible_servers(ctx):
             print(f"Process Finished!\n\n")
             return
     await LoggingCommandBeingExecuted(ctx.user.name,f"/get_list_of_accessible_servers\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
-    await ctx.followup.send(f"{ctx.user.name} does not have a Cyberbot admin account yet!")
+    await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
 
@@ -1792,36 +1841,93 @@ async def create_admin_account(ctx, user_email: str):
             await ctx.followup.send(f"The email address already associated with a different admin account!")
             print("Email address already associated with a different admin account!\n\n")
             break
-    if not accountExist and not emailTaken:
+    async with OneTimeTokenLock:
+        async with aiofiles.open(ONETIMETOKENPATH, "r") as file:
+            resetTokens = json.loads(await file.read())
+    if user_email in resetTokens["Email Confirmation Token"]:
+        await LoggingCommandBeingExecuted(ctx.user.name,f"/create_admin_account\nCommand Status: Denied/An Email Confirmation Token that still valid already sent to the user email!")
+        await ctx.followup.send(f"You have already request an admin account registration and a 10 minutes OTP code was sent to the email! Please confirm your email using the command /confirm_admin_account with the OTP code or wait until the OTP expired to request a new one again using this command!")
+        print(f"A valid Email OTP code already sent to {user_email}\n\n")
+    else:
+        if not accountExist and not emailTaken:
+            async with OneTimeTokenLock:
+                async with aiofiles.open(ONETIMETOKENPATH, "r") as file:
+                    resetTokens = json.loads(await file.read())
+            token = ""
+            for i in range(7):
+                token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
+            if await asyncio.to_thread(sendEmail, "Email Verification Code", f"Your Cyberbot Admin Account Email Verification Code is {token}\n\nThis code will expire in 10 minutes!\nIf you did not request this, please ignore this message.", user_email) == "Email sent successfully!":
+                resetTokens["Email Confirmation Token"][user_email] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 600]
+                async with OneTimeTokenLock:
+                    async with aiofiles.open(ONETIMETOKENPATH, "w") as file:
+                        await file.write(json.dumps(resetTokens, indent=4))
+                await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Approved/An Email Confirmation Token was sent to the user email!")
+                await ctx.followup.send(f"Please confirm your email using the command /confirm_admin_account with the OTP code sent at {user_email}!")
+                print(f"New Email OTP code sent to {user_email}\n\n")
+            else:
+                await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Denied/Error sending email!")
+                await ctx.followup.send(f"Cyberbot can't register a new admin account with the email address: {user_email}")
+                print(f"Error sending email!\n\n")
+
+
+@Cyberbot.tree.command(
+    name="confirm_admin_account",
+    description="Confirm to finish creating a Cyberbot admin account"
+)
+@app_commands.describe(
+    user_email="Please provide an email address to confirm your Cyberbot admin account!",
+    otp="Please provide a valid Email Confirmation Code!"
+)
+async def confirm_admin_account(ctx, user_email: str, otp: str):
+    print(f"User {ctx.user.name} initiated /confirm_admin_account command")
+    await ctx.response.defer(ephemeral=True)
+    async with OneTimeTokenLock:
+        async with aiofiles.open(ONETIMETOKENPATH, "r") as file:
+            resetTokens = json.loads(await file.read())
+    if user_email in resetTokens["Email Confirmation Token"]:
         defaultPassword = await randomPasswordGenerator()
-        if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created",f"A new Cyberbot admin account was created with a default password:\n{defaultPassword}\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!", user_email) == "Email sent successfully!":
-            CyberBotConfigData["Admins"].append(
-                {"User ID": ctx.user.id,
-                 "User Email": user_email,
-                 "User Credential": hashlib.sha512(f"{defaultPassword}{ctx.user.id}".encode()).hexdigest(),
-                 "Credential Minimum Age": 0,
-                 "Credential Expiration Age": time.time() + 15552000,
-                 "Previous Credentials Used": [hashlib.sha512(f"{defaultPassword}{ctx.user.id}".encode()).hexdigest()],
-                 "Current Admin Session Period": {},
-                 "Last Time Logged In": "",
-                 "Current Account Locked Out Period": 0,
-                 "Failed Log In Attempts": 0,
-                 "Locked Out History": [],
-                 "Total Locked Out": 0,
-                 "Accessible Servers": [],
-                 "Account Creation Date": time.ctime(time.time())
-                 }
-            )
-            async with ConfigLock:
-                async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
-                    await file.write(json.dumps(CyberBotConfigData, indent=4))
-            await LoggingCommandBeingExecuted(ctx.user.name,f"/create_admin_account\nCommand Status: Approved/New admin account registered for user {ctx.user.name}")
-            await ctx.followup.send(f"A new admin account has been created for you! Please check the email you used to registered the account for more details!")
-            print(f"New Admin account created for user {ctx.user.name}\n\n")
+        if resetTokens["Email Confirmation Token"][user_email][0] == hashlib.sha1(otp.encode()).hexdigest() and time.time() < resetTokens["Email Confirmation Token"][user_email][1]:
+            if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created",f"A new Cyberbot admin account was created with a default password:\n{defaultPassword}\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!", user_email) == "Email sent successfully!":
+                del resetTokens["Email Confirmation Token"][user_email]
+                async with OneTimeTokenLock:
+                    async with aiofiles.open(ONETIMETOKENPATH, "w") as file:
+                        await file.write(json.dumps(resetTokens, indent=4))
+                CyberBotConfigData["Admins"].append(
+                    {"User ID": ctx.user.id,
+                     "User Email": user_email,
+                     "User Credential": hashlib.sha512(f"{defaultPassword}{ctx.user.id}".encode()).hexdigest(),
+                     "Credential Minimum Age": 0,
+                     "Credential Expiration Age": time.time() + 15552000,
+                     "Previous Credentials Used": [hashlib.sha512(f"{defaultPassword}{ctx.user.id}".encode()).hexdigest()],
+                     "Current Admin Session Period": {},
+                     "Last Time Logged In": "",
+                     "Current Account Locked Out Period": 0,
+                     "Failed Log In Attempts": 0,
+                     "Locked Out History": [],
+                     "Total Locked Out": 0,
+                     "Total Failed Log In Attempts": 0,
+                     "Accessible Servers": [],
+                     "Account Creation Date": time.ctime(time.time())
+                     }
+                )
+                async with ConfigLock:
+                    async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
+                        await file.write(json.dumps(CyberBotConfigData, indent=4))
+                await LoggingCommandBeingExecuted(ctx.user.name,f"/confirm_admin_account\nCommand Status: Approved/New admin account registered for user {ctx.user.name}")
+                await ctx.followup.send(f"A new admin account has been created for you! Please check the email you used to registered the account for more details!")
+                print(f"New Admin account created for user {ctx.user.name}\n\n")
+            else:
+                await LoggingCommandBeingExecuted(ctx.user.name,f"/confirm_admin_account\nCommand Status: Denied/Cyberbot can not send Account Creation Confirmation email to user email!")
+                await ctx.followup.send("Cyberbot can not send the account creation confirmation email to you! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
+                print(f"Error sending email!\n\n")
         else:
-            await LoggingCommandBeingExecuted(ctx.user.name,f"/create_admin_account\nCommand Status: Denied/Error sending email!")
-            await ctx.followup.send(f"Cyberbot can't register a new admin account with the email address: {user_email}")
-            print(f"Error sending email!\n\n")
+            await LoggingCommandBeingExecuted(ctx.user.name,f"/confirm_admin_account\nCommand Status: Denied/Invalid or expired Email Confirmation Code!")
+            await ctx.followup.send(f"The Email Confirmation Code that you provided is invalid or already expired. Please use command /create_admin_account to register a new one again!")
+            print(f"No Email Confirmation Token associated with the provided email!\n\n")
+    else:
+        await LoggingCommandBeingExecuted(ctx.user.name,f"/confirm_admin_account\nCommand Status: Denied/No Email Confirmation Token associated with the provided email!")
+        await ctx.followup.send(f"There is no Email Confirmation Code associated with the provided email {user_email}. Please use command /create_admin_account to register one!")
+        print(f"No Email Confirmation Token associated with the provided email!\n\n")
 
 
 @Cyberbot.tree.command(
@@ -1840,27 +1946,30 @@ async def remove_admin_account(ctx, user_email: str, password: str):
         if adminAccount["User ID"] == ctx.user.id:
             if time.time() > adminAccount["Current Account Locked Out Period"]:
                 if adminAccount["User Email"] == user_email and adminAccount["User Credential"] == hashlib.sha512(f"{password}{ctx.user.id}".encode()).hexdigest():
+                    adminAccount["Failed Log In Attempts"] = 0
                     if time.time() < adminAccount["Credential Expiration Age"]:
                         if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", "You have requested an unregistration process of your Cyberbot admin account! All data associated with the account are permanently deleted!", user_email) != "Email sent unsuccessfully!":
                             CyberBotConfigData["Admins"].pop(idx)
                             await ctx.followup.send("Your Cyberbot admin account has been deleted!")
-                            await LoggingCommandBeingExecuted(ctx.user.name, f"/remove_admin_account\nCommand Status: Approved")
+                            await LoggingCommandBeingExecuted(ctx.user.name, f"/remove_admin_account\nCommand Status: Approved/User admin account deleted!")
                             print(f"User {ctx.user.name} admin account has been unregistered!\n\n")
                         else:
-                            await ctx.followup.send("Cyberbot can not send email to you! Please try the command again!")
-                            await LoggingCommandBeingExecuted(ctx.user.name, f"/remove_admin_account\nCommand Status: Denied/Error sending email!")
+                            await LoggingCommandBeingExecuted(ctx.user.name, f"/remove_admin_account\nCommand Status: Denied/Cyberbot can not send Account Unregistration Confirmation email to user email!")
+                            await ctx.followup.send("Cyberbot can not send the unregistration confirmation email to you! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
                             print(f"Error sending email!\n\n")
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/Expired Password")
+                        await LoggingCommandBeingExecuted(ctx.user.name,f"/remove_admin_account\nCommand Status: Denied/Expired Password")
                         await ctx.followup.send("Your password has expired. Please use /request_password_reset_token and /change_password to update your password!")
                         print(f"User {ctx.user.name} password expired!\n\n")
                 else:
                     adminAccount["Failed Log In Attempts"] += 1
+                    adminAccount["Total Failed Log In Attempts"] += 1
                     if adminAccount["Failed Log In Attempts"] % 7 != 0:
                         await LoggingCommandBeingExecuted(ctx.user.name,f"/remove_admin_account\nCommand Status: Denied/Bad Credentials")
                         await ctx.followup.send(f"Invalid user email or password!!!\nYou have {7 - adminAccount["Failed Log In Attempts"] % 7} attempts left to authenticate!")
                         print(f"User {ctx.user.name} input invalid credentials!\n\n")
                     else:
+                        adminAccount["Failed Log In Attempts"] = 0
                         adminAccount["Locked Out History"].append(time.ctime(time.time()))
                         adminAccount["Current Account Locked Out Period"] = time.time() + 10800
                         adminAccount["Total Locked Out"] = len(adminAccount["Locked Out History"])
@@ -1879,7 +1988,7 @@ async def remove_admin_account(ctx, user_email: str, password: str):
                 print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
             return
         idx += 1
-    await LoggingCommandBeingExecuted(ctx.user.name,f"/request_password_reset_token\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
+    await LoggingCommandBeingExecuted(ctx.user.name,f"/remove_admin_account\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
     await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
 
@@ -1962,6 +2071,8 @@ async def removing_admins(ctx, member: discord.Member):
                     else:
                         if await asyncio.to_thread(sendEmail, "New Accessible Server Removed", f"The owner {ctx.user.name} of server {ctx.guild.name} with server ID {ctx.guild.id} has removed your Cyberbot Admin Account access from the server", admin["User Email"]) == "Email sent successfully!":
                             admin["Accessible Servers"].remove(ctx.guild.id)
+                            if admin["Current Admin Session Period"].get(str(ctx.guild.id)):
+                                del admin["Current Admin Session Period"][str(ctx.guild.id)]
                             async with ConfigLock:
                                 async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
                                     await file.write(json.dumps(CyberBotConfigData, indent=4))
@@ -1994,20 +2105,29 @@ async def request_password_reset_token(ctx):
         if ctx.user.id == adminAccount["User ID"]:
             if time.time() > adminAccount["Current Account Locked Out Period"]:
                 if time.time() >= adminAccount["Credential Minimum Age"]:
-                    async with ResetTokenLock:
-                        async with aiofiles.open(RESETPASSWORDTOKENPATH, "r") as file:
+                    async with OneTimeTokenLock:
+                        async with aiofiles.open(ONETIMETOKENPATH, "r") as file:
                             resetTokens = json.loads(await file.read())
-                    token = ""
-                    for i in range(7):
-                        token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-                    resetTokens[adminAccount["User Email"]] = [token, time.time() + 180]
-                    async with ResetTokenLock:
-                        async with aiofiles.open(RESETPASSWORDTOKENPATH, "w") as file:
-                            await file.write(json.dumps(resetTokens, indent=4))
-                    await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", f"Your password reset token is {token}, it will expired in 3 minutes!", adminAccount["User Email"])
-                    await LoggingCommandBeingExecuted(ctx.user.name,f"/request_password_reset_token\nCommand Status: Approved/A reset token has been sent to user email!")
-                    await ctx.followup.send(f"Please check your email {adminAccount["User Email"]}!")
-                    print(f"A new reset token has been sent to user {ctx.user.name} via email {adminAccount['User Email']}!\n\n")
+                    if adminAccount["User Email"] in resetTokens["Password Reset Token"]:
+                        await LoggingCommandBeingExecuted(ctx.user.name, f"/request_password_reset_token\nCommand Status: Denied/A Passord Reset Token already sent to the user email!")
+                        await ctx.followup.send(f"You just requested a 3 minutes Password Reset OTP code. Please check your email for it or wait until the token expired to request a new one again!")
+                        print(f"User {ctx.user.name} just changed the admin account password!\n\n")
+                    else:
+                        token = ""
+                        for i in range(7):
+                            token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
+                        if await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", f"Your password reset token is {token}, it will expired in 3 minutes!", adminAccount["User Email"]) == "Email sent successfully!":
+                            resetTokens["Password Reset Token"][adminAccount["User Email"]] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 180]
+                            async with OneTimeTokenLock:
+                                async with aiofiles.open(ONETIMETOKENPATH, "w") as file:
+                                    await file.write(json.dumps(resetTokens, indent=4))
+                            await LoggingCommandBeingExecuted(ctx.user.name,f"/request_password_reset_token\nCommand Status: Approved/A reset token has been sent to user email!")
+                            await ctx.followup.send(f"Please check your email {adminAccount["User Email"]}!")
+                            print(f"A new reset token has been sent to user {ctx.user.name} via email {adminAccount['User Email']}!\n\n")
+                        else:
+                            await LoggingCommandBeingExecuted(ctx.user.name, f"/request_password_reset_token\nCommand Status: Denied/Cyberbot can not send the password reset OTP to user email!")
+                            await ctx.followup.send(f"Cyberbot can't send the password reset OTP code to your account email {adminAccount["User Email"]}! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
+                            print(f"Can not send email!\n\n")
                 else:
                     await LoggingCommandBeingExecuted(ctx.user.name,f"/request_password_reset_token\nCommand Status: Denied/User password age not above 3 hours yet")
                     await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
@@ -2040,99 +2160,108 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, custo
     for adminAccount in CyberBotConfigData["Admins"]:
         if ctx.user.id == adminAccount["User ID"]:
             if time.time() > adminAccount["Current Account Locked Out Period"]:
-                if accountemail == adminAccount["User Email"]:
-                    async with ResetTokenLock:
-                        async with aiofiles.open(RESETPASSWORDTOKENPATH, "r") as file:
-                            resetTokens = json.loads(await file.read())
-                    if accountemail in resetTokens:
-                        if resetTokens[accountemail][0] == passwordresettoken and time.time() < resetTokens[accountemail][1]:
-                            if time.time() >= adminAccount["Credential Minimum Age"]:
-                                update = True
-                                if custompassword == "True":
-                                    hashednewpassword = hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest()
-                                    if len(newpassword) > 30:
-                                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password too long")
-                                        await ctx.followup.send("Your new password is too long!")
-                                        print(f"User {ctx.user.name} new password too long!\n\n")
-                                        update = False
-                                    elif hashednewpassword == adminAccount["User Credential"]:
-                                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password is the same as the old one")
-                                        await ctx.followup.send("Your new password is the same as your old password!")
-                                        print(f"User {ctx.user.name} reused password!\n\n")
-                                        update = False
-                                    elif hashednewpassword in adminAccount["Previous Credentials Used"]:
-                                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password already been used from the past!")
-                                        await ctx.followup.send("You have used this password before, please set a new password!")
-                                        print(f"User {ctx.user.name} reused password!\n\n")
-                                        update = False
-                                    elif None in [re.search(r'[a-z]', newpassword), re.search(r'[A-Z]', newpassword), re.search(r'\d', newpassword), re.search(r'[!@#$%&*_+=]', newpassword)] or len(newpassword) < 12:
-                                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password does not match the password policy")
-                                        await ctx.followup.send("Your new password password must be:\n"
-                                                                "At least 12 characters\n"
-                                                                "Have mixed case ASCII letters and numbers\n"
-                                                                "Contains any of the following special characters !@#$%&*_+=\n"
-                                                                "Please provide a different password")
-                                        print(f"User {ctx.user.name} new password not match the password policy!\n\n")
-                                        update = False
-                                    elif await CheckPasswordPwned(newpassword):
-                                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/New Password existed in a data breach database")
-                                        await ctx.followup.send("The new password that you want to set was detected to already existed in a data breach database, please choose a different password!")
-                                        print(f"User {ctx.user.name} new password existed in data breach database!\n\n")
-                                        update = False
-                                    else:
-                                        passwordStrength, probability = await asyncio.to_thread(Prediction, newpassword, BERTtokenizer, BERTPasswordModel, "Password Strength")
-                                        if passwordStrength < 3 and probability > 0.5:
-                                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/BERT model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
-                                            await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier BERT encoder-transformer flagged as weak password!\nPlease provide a different password")
-                                            print(f"User {ctx.user.name} new password flagged weak by BERT model!\n\n")
+                if time.time() >= adminAccount["Credential Minimum Age"]:
+                    if accountemail == adminAccount["User Email"]:
+                        async with OneTimeTokenLock:
+                            async with aiofiles.open(ONETIMETOKENPATH, "r") as file:
+                                resetTokens = json.loads(await file.read())
+                        if accountemail in resetTokens["Password Reset Token"]:
+                            if resetTokens["Password Reset Token"][accountemail][0] == hashlib.sha1(passwordresettoken.encode()).hexdigest() and time.time() < resetTokens["Password Reset Token"][accountemail][1]:
+                                if time.time() >= adminAccount["Credential Minimum Age"]:
+                                    del resetTokens["Password Reset Token"][accountemail]
+                                    async with OneTimeTokenLock:
+                                        async with aiofiles.open(ONETIMETOKENPATH, "w") as file:
+                                            await file.write(json.dumps(resetTokens, indent=4))
+                                    update = True
+                                    if custompassword == "True":
+                                        hashednewpassword = hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest()
+                                        if len(newpassword) > 30:
+                                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password too long")
+                                            await ctx.followup.send("Your new password is too long!")
+                                            print(f"User {ctx.user.name} new password too long!\n\n")
+                                            update = False
+                                        elif hashednewpassword == adminAccount["User Credential"]:
+                                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password is the same as the old one")
+                                            await ctx.followup.send("Your new password is the same as your old password!")
+                                            print(f"User {ctx.user.name} reused password!\n\n")
+                                            update = False
+                                        elif hashednewpassword in adminAccount["Previous Credentials Used"]:
+                                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password already been used from the past!")
+                                            await ctx.followup.send("You have used this password before, please set a new password!")
+                                            print(f"User {ctx.user.name} reused password!\n\n")
+                                            update = False
+                                        elif None in [re.search(r'[a-z]', newpassword), re.search(r'[A-Z]', newpassword), re.search(r'\d', newpassword), re.search(r'[!@#$%&*_+=]', newpassword)] or len(newpassword) < 12:
+                                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password does not match the password policy")
+                                            await ctx.followup.send("Your new password password must be:\n"
+                                                                    "At least 12 characters\n"
+                                                                    "Have mixed case ASCII letters and numbers\n"
+                                                                    "Contains any of the following special characters !@#$%&*_+=\n"
+                                                                    "Please provide a different password")
+                                            print(f"User {ctx.user.name} new password not match the password policy!\n\n")
+                                            update = False
+                                        elif await CheckPasswordPwned(newpassword):
+                                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/New Password existed in a data breach database")
+                                            await ctx.followup.send("The new password that you want to set was detected to already existed in a data breach database, please choose a different password!")
+                                            print(f"User {ctx.user.name} new password existed in data breach database!\n\n")
                                             update = False
                                         else:
-                                            passwordStrength, probability = await asyncio.to_thread(Prediction,newpassword, AllenAItokenizer, AllenAIPasswordModel, "Password Strength")
+                                            passwordStrength, probability = await asyncio.to_thread(Prediction, newpassword, BERTtokenizer, BERTPasswordModel, "Password Strength")
                                             if passwordStrength < 3 and probability > 0.5:
-                                                await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Allen AI model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
-                                                await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier Allen AI encoder-transformer flagged as weak password!\nPlease provide a different password")
-                                                print(f"User {ctx.user.name} new password flagged weak by Allen AI model!\n\n")
+                                                await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/BERT model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
+                                                await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier BERT encoder-transformer flagged as weak password!\nPlease provide a different password")
+                                                print(f"User {ctx.user.name} new password flagged weak by BERT model!\n\n")
                                                 update = False
-                                            elif await GeminiCheckCommonPassword(newpassword):
-                                                await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password too common and easy to guess")
-                                                await ctx.followup.send("Your new password contains keywords easy to guess or already in a common used password list!\nPlease provide a different password")
-                                                print(f"User {ctx.user.name} new password too common and easy to guess!\n\n")
-                                                update = False
+                                            else:
+                                                passwordStrength, probability = await asyncio.to_thread(Prediction,newpassword, AllenAItokenizer, AllenAIPasswordModel, "Password Strength")
+                                                if passwordStrength < 3 and probability > 0.5:
+                                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Allen AI model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
+                                                    await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier Allen AI encoder-transformer flagged as weak password!\nPlease provide a different password")
+                                                    print(f"User {ctx.user.name} new password flagged weak by Allen AI model!\n\n")
+                                                    update = False
+                                                elif await GeminiCheckCommonPassword(newpassword):
+                                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Password too common and easy to guess")
+                                                    await ctx.followup.send("Your new password contains keywords easy to guess or already in a common used password list!\nPlease provide a different password")
+                                                    print(f"User {ctx.user.name} new password too common and easy to guess!\n\n")
+                                                    update = False
+                                    else:
+                                        newpassword = await randomPasswordGenerator()
+                                        while hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() == adminAccount["User Credential"] or hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() in adminAccount["Previous Credentials Used"]:
+                                            newpassword = randomPasswordGenerator()
+                                        hashednewpassword = hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest()
+                                    if update:
+                                        adminAccount["User Credential"] = hashednewpassword
+                                        adminAccount["Credential Minimum Age"] = time.time() + 10800
+                                        adminAccount["Credential Expiration Age"] = time.time() + 15552000
+                                        adminAccount["Previous Credentials Used"].append(adminAccount["User Credential"])
+                                        async with ConfigLock:
+                                            async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
+                                                await file.write(json.dumps(CyberBotConfigData, indent=4))
+                                        if custompassword == "False":
+                                            await asyncio.to_thread(sendEmail, "Cyberbot Admin Account Password Updated", f"Your admin account password has been changed to {newpassword}\nPlease delete this email once you have acknowledged your new password change!", accountemail)
+                                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Approved/Admin account password updated")
+                                        await ctx.followup.send(f"Your password has been updated to {newpassword}")
+                                        print(f"User {ctx.user.name} admin account updated successfully!\n\n")
+                                        return
                                 else:
-                                    newpassword = await randomPasswordGenerator()
-                                    while hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() == adminAccount["User Credential"] or hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() in adminAccount["Previous Credentials Used"]:
-                                        newpassword = randomPasswordGenerator()
-                                    hashednewpassword = hashlib.sha512( f"{newpassword}{ctx.user.id}".encode()).hexdigest()
-                                if update:
-                                    adminAccount["User Credential"] = hashednewpassword
-                                    adminAccount["Credential Minimum Age"] = time.time() + 10800
-                                    adminAccount["Credential Expiration Age"] = time.time() + 15552000
-                                    adminAccount["Previous Credentials Used"].append(adminAccount["User Credential"])
-                                    async with ConfigLock:
-                                        async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
-                                            await file.write(json.dumps(CyberBotConfigData, indent=4))
-                                    if custompassword == "False":
-                                        await asyncio.to_thread(sendEmail, "Cyberbot Admin Account Password Updated", f"Your admin account password has been changed to {newpassword}\nPlease delete this email once you have acknowledged your new password change!", accountemail)
-                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Approved/Admin account password updated")
-                                    await ctx.followup.send(f"Your password has been updated to {newpassword}")
-                                    print(f"User {ctx.user.name} admin account updated successfully!\n\n")
-                                    return
+                                    await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/User password age not above 3 hours yet")
+                                    await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
+                                    print(f"User {ctx.user.name} just changed the admin account password!\n\n")
                             else:
-                                await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/User password age not above 3 hours yet")
-                                await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
-                                print(f"User {ctx.user.name} just changed the admin account password!\n\n")
+                                await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Expired or Invalid Password Reset Token")
+                                await ctx.followup.send(f"The reset token provided is invalid or expired. Please request a new one again!")
+                                print(f"User {ctx.user.name} password reset token Expired/Invalid!\n\n")
                         else:
-                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Expired or Invalid Password Reset Token")
-                            await ctx.followup.send(f"The reset token provided is invalid or expired. Please request a new one again!")
-                            print(f"User {ctx.user.name} password reset token Expired/Invalid!\n\n")
+                            await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/No Password Reset Token Request Yet")
+                            await ctx.followup.send(f"You have not request a reset token yet or the token is expired! Please use the command /request_password_reset_token to request one!")
+                            print(f"User {ctx.user.name} did not request a password reset token yet!\n\n")
                     else:
-                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/No Password Reset Token Request Yet")
-                        await ctx.followup.send(f"You have not request a reset token yet or the token is expired! Please use the command /request_password_reset_token to request one!")
-                        print(f"User {ctx.user.name} did not request a password reset token yet!\n\n")
+                        await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Wrong Email Address")
+                        await ctx.followup.send("Your email address is wrong!")
+                        print(f"User {ctx.user.name} provided wrong email address!\n\n")
                 else:
-                    await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Wrong Email Address")
-                    await ctx.followup.send("Your email address is wrong!")
-                    print(f"User {ctx.user.name} provided wrong email address!\n\n")
+                    await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/User password age not above 3 hours yet")
+                    await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
+                    print(f"User {ctx.user.name} just changed the admin account password!\n\n")
             else:
                 await LoggingCommandBeingExecuted(ctx.user.name,f"/change_password\nCommand Status: Denied/Admin account locked!")
                 hours_remaining = (adminAccount["Current Account Locked Out Period"] - time.time()) / 3600
@@ -2174,6 +2303,7 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
                             return
 
                     if adminAccount["User Email"] == accountemail and adminAccount["User Credential"] == hashlib.sha512(f"{accountpassword}{ctx.user.id}".encode()).hexdigest():
+                        adminAccount["Failed Log In Attempts"] = 0
                         if time.time() < adminAccount["Credential Expiration Age"]:
                             if ctx.guild.id in adminAccount["Accessible Servers"] or ctx.user.id == ctx.guild.owner.id:
                                 adminAccount["Current Admin Session Period"][str(ctx.guild.id)] = time.time() + 3600
@@ -2191,11 +2321,13 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
                             print(f"User {ctx.user.name} password expired!\n\n")
                     else:
                         adminAccount["Failed Log In Attempts"] += 1
+                        adminAccount["Total Failed Log In Attempts"] += 1
                         if adminAccount["Failed Log In Attempts"] % 7 != 0:
                             await LoggingCommandBeingExecuted(ctx.user.name,f"/admin_log_in\nCommand Status: Denied/Bad Credentials")
                             await ctx.followup.send(f"Invalid user email or password!!!\nYou have {7 - adminAccount["Failed Log In Attempts"] % 7} attempts left to log in!")
                             print(f"User {ctx.user.name} input invalid credentials!\n\n")
                         else:
+                            adminAccount["Failed Log In Attempts"] = 0
                             adminAccount["Locked Out History"].append(time.ctime(time.time()))
                             adminAccount["Current Account Locked Out Period"] = time.time() + 10800
                             adminAccount["Total Locked Out"] = len(adminAccount["Locked Out History"])
@@ -2346,7 +2478,8 @@ async def viewing_cyberbot_configuration(ctx):
                                 f"Automation scan mode for this server is **{CyberBotConfigData["Automation-Mode"][str(ctx.guild.id)]}**\n"
                                 f"Silent scan mode for this server is **{CyberBotConfigData["Silent-Mode"][str(ctx.guild.id)]}**\n"
                                 f"{nonMonitoringChannels}")
-                            await LoggingCommandBeingExecuted(ctx.user.name,f"/viewing_cyberbot_configuration\nCommand Status: Approved")
+                            await LoggingCommandBeingExecuted(ctx.user.name,f"/viewing_cyberbot_configuration\nCommand Status: Approved/Cyberbot's Server Configuration settings has been displayed to user")
+                            print(f"Cyberbot Server Configuration settings has been displayed to user!\n\n")
                         else:
                             del adminAccount["Current Admin Session Period"][str(ctx.guild.id)]
                             await LoggingCommandBeingExecuted(ctx.user.name,f"/viewing_cyberbot_configuration\nCommand Status: Denied/Admin session expired")
@@ -2410,6 +2543,7 @@ async def non_monitoring_channel(ctx, action: Literal["ADD", "REMOVE"]):
                                 else:
                                     await ctx.followup.send(f"Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
                                     await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Denied/Channel '{ctx.channel.name}' - ID {ctx.channel.id} already been removed from the server '{ctx.guild.name}' - ID {ctx.guild.id} non monitoring channel list!")
+                            print(f"Command Execution Success!\n\n")
                         else:
                             del adminAccount["Current Admin Session Period"][str(ctx.guild.id)]
                             await LoggingCommandBeingExecuted(ctx.user.name,f"/non_monitoring_channel {action}\nCommand Status: Denied/Admin session expired")
@@ -2538,10 +2672,10 @@ async def manual_malware_scan(ctx, file_to_be_scanned: discord.Attachment):
     await ctx.response.defer()
     if "../" in file_to_be_scanned.filename:
         await ctx.followup.send( "Malware scan not performed for this file due to potential ../ attack in the file name scheme!")
-        await LoggingCommandBeingExecuted(ctx.user.name,f"/manual_malware_scan_mode file temporary URL: {file_to_be_scanned.url}\nCommand Status: Denied/File name hinted potential ../ attack!")
+        await LoggingCommandBeingExecuted(ctx.user.name,f"/manual_malware_scan file temporary URL: {file_to_be_scanned.url}\nCommand Status: Denied/File name hinted potential ../ attack!")
         print(f"Potential ../ attack! Reject scan process!\n\n")
     else:
-        await LoggingCommandBeingExecuted(ctx.user.name,f"/manual_malware_scan_mode file temporary URL: {file_to_be_scanned.url}\nCommand Status: Approved")
+        await LoggingCommandBeingExecuted(ctx.user.name,f"/manual_malware_scan file temporary URL: {file_to_be_scanned.url}\nCommand Status: Approved")
         logMessage = (f"{time.ctime(time.time())}\n"
                       f"ORIGIN AUTHOR: {ctx.user.name}\n"
                       f"ORIGIN AUTHOR ID: {ctx.user.id}\n"
@@ -3106,9 +3240,7 @@ async def on_message(message):
                                         logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
                                         print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
                                         print(f"URL {url} status code: {testValidURLResponse.status}")
-                                        await message.reply(
-                                            f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}",
-                                            suppress_embeds=True)
+                                        await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
                                     else:
                                         resolvedUrls.append(url)
                             except Exception as error:
@@ -3136,15 +3268,11 @@ async def on_message(message):
                         logMessage += "URL SCAN SUMMARY: Already been scanned as safe to visit\n"
                         print(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit")
                         if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                            await message.reply(
-                                f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit",
-                                suppress_embeds=True)
+                            await message.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit", suppress_embeds=True)
                     elif await checkingFlaggedMaliciousData(hashedUrl, "URLs"):
                         logMessage += "URL SCAN SUMMARY: Already been scanned as malicious\n\n"
                         print(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious\n\n")
-                        await message.reply(
-                            f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious",
-                            suppress_embeds=True)
+                        await message.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious", suppress_embeds=True)
                         await message.delete()
                     else:
                         UrlScanResult = await virusTotalURLScan(url)
@@ -3156,8 +3284,7 @@ async def on_message(message):
                             logMessage += f"URL SCAN SUMMARY: VirusTotal flagged as malicious\n"
                             print(f"URL {url} flagged malicious by Virus Total")
                             await addingHashedData(hashedUrl, "URLs", True)
-                            await message.channel.send(f"URL {url} is flagged malicious by Virus Total",
-                                                       suppress_embeds=True)
+                            await message.channel.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
                             await message.delete()
                         else:
                             logMessage += f"URL SCAN SUMMARY: VirusTotal scanned as Clean/Safe To Visit\n"
@@ -3175,16 +3302,14 @@ async def on_message(message):
                 for attachment in message.attachments:
                     print(f"Scanning file {attachment.filename}...")
                     if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                        await message.reply(
-                            f"Cyberbot is scanning the file {attachment.filename} in this message, please do not download until Cyberbot scan is clear of malware.")
+                        await message.reply(f"Cyberbot is scanning the file {attachment.filename} in this message, please do not download until Cyberbot scan is clear of malware.")
                     logMessage += f"FILE ATTACHMENT: {attachment.filename}\n"
 
                     """Checking ../ attack in file name scheme"""
                     if "../" in attachment.filename:
                         logMessage += f"FILE SCAN SUMMARY: File name hinted potential directory transversal attack!\n"
                         print(f"File name {attachment.filename} hinted potential directory transversal attack!")
-                        await message.reply(
-                            f"The file {attachment.filename} name hinted potential directory transversal attack, also known as ../ attack!")
+                        await message.reply(f"The file {attachment.filename} name hinted potential directory transversal attack, also known as ../ attack!")
                         await message.delete()
                         print("Scan Process Finish!\n\n")
                         await logScanSession(f"{logMessage}\n\n")
@@ -3211,13 +3336,11 @@ async def on_message(message):
                                 logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
 
                                 """Checking file true extension"""
-                                RootFileTrueExt = await checkingRealFileExtension(await response.read(),
-                                                                                  attachment.filename)
+                                RootFileTrueExt = await checkingRealFileExtension(await response.read(), attachment.filename)
                                 logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
 
                                 if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                    await message.reply(
-                                        f"The file {attachment.filename} extension is: {RootFileTrueExt}")
+                                    await message.reply(f"The file {attachment.filename} extension is: {RootFileTrueExt}")
                                 filePath = f"{filePath}{RootFileTrueExt}"
 
                                 """Checking if there is another subroutine scanning the same file"""
@@ -3235,17 +3358,13 @@ async def on_message(message):
                                 """Checking if file hashed signature already in clean or malicious data set"""
                                 if await checkingCleanData(RootFileHashed, "All Extension"):
                                     logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
-                                    print(
-                                        f"File {attachment.filename} has already been checked and recorded in the clean data set!\n\n")
+                                    print(f"File {attachment.filename} has already been checked and recorded in the clean data set!\n\n")
                                     if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                        await message.reply(
-                                            f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
+                                        await message.reply(f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
                                 elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
                                     logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
-                                    print(
-                                        f"File {attachment.filename} has already been checked and recorded in the malicious file set!\n\n")
-                                    await message.reply(
-                                        f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
+                                    print(f"File {attachment.filename} has already been checked and recorded in the malicious file set!\n\n")
+                                    await message.reply(f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
                                     await message.delete()
                                     print(f"Scan Process Finish!\n\n")
                                     if CURRENTSCANOPERATION.get(RootFileHashed, ""):
@@ -3280,10 +3399,8 @@ async def on_message(message):
                                             FILEDOWNLOADCOUNTER += 1
                                         else:
                                             logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
-                                            print(
-                                                "File attachment outside of Cyberbot scope of file formats for malware analysis!")
-                                            await message.reply(
-                                                f"The file {attachment.filename} extension is outside of Cyberbot scope of file formats for malware analysis!")
+                                            print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
+                                            await message.reply(f"The file {attachment.filename} extension is outside of Cyberbot scope of file formats for malware analysis!")
                             else:
                                 logMessage += "FILE SCAN SUMMARY: File attachment can not be downloaded by Cyberbot for malware analysis!\n"
                                 print(f"Cyberbot can not retrieve the attachment for scan!")
@@ -3299,8 +3416,7 @@ async def on_message(message):
                                 if int(virusTotalResult[0]) > 0:
                                     logMessage += "FILE SCAN SUMMARY: File attachment flagged as Malicious by VirusTotal\n"
                                     print(f"Virus Total analyzed file {attachment.filename} as malicious!")
-                                    await message.reply(
-                                        f"The file {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
+                                    await message.reply(f"The file {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
                                     await message.delete()
                                     await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                     os.remove(filePath)
@@ -3317,8 +3433,7 @@ async def on_message(message):
                                 print(f"VirusTotal can not scan the attachment!")
 
                             if RootFileTrueExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
-                                print(
-                                    "Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
+                                print("Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
                                 FileUncompressedSize = await asyncio.to_thread(
                                     ArchivesDiskImagesBombAnalysisAndExtraction, [filePath], mountPoint)
                                 if FileUncompressedSize.startswith(
@@ -3353,8 +3468,7 @@ async def on_message(message):
                                     elif FileUncompressedSize.startswith("Disk Image Error!"):
                                         logMessage += f"FILE SCAN SUMMARY: File Attachment has a corrupted disk image\n"
                                         print(f"Archive/Disk file has corrupted disk image")
-                                        await message.reply(
-                                            f"The file {attachment.filename} has a corrupted disk image!")
+                                        await message.reply(f"The file {attachment.filename} has a corrupted disk image!")
                                     elif FileUncompressedSize.startswith("Potential Recursive Archive Bomb Attack!"):
                                         logMessage += f"FILE SCAN SUMMARY: File Attachment has more than 3 duplicated archive/disk files. Potential recursive archive/disk bomb attack\n"
                                         print(f"Archive/Disk file has more than 3 duplicated archive/disk files")
@@ -3393,11 +3507,9 @@ async def on_message(message):
                                         f"bomb!\nBegin the scanning process on the uncompressed content"
                                         f", which may take quite some time. There are {FileUncompressedSize.split('|')[1]}"
                                         f" duplicated content to be aware of!")
-                                    await message.reply(
-                                        f"The Uncompressed File Structure of {attachment.filename} are:\n{ufs}")
+                                    await message.reply(f"The Uncompressed File Structure of {attachment.filename} are:\n{ufs}")
 
-                                print(
-                                    f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
+                                print(f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
                                 for dirpath, _, filenames in os.walk(mountPoint):
                                     for filename in filenames:
                                         logMessage += f"UNCOMPRESSED FILE INSIDE ARCHIVE {attachment.filename}: {filename}\n"
@@ -3406,24 +3518,19 @@ async def on_message(message):
                                         async with aiofiles.open(filepath, mode="rb") as source:
                                             fileExt = await checkingRealFileExtension(await source.read(), filename)
                                             HashedFileData = hashlib.sha256(await source.read()).hexdigest()
-                                        print(
-                                            f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                        print(f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                         logMessage += f"SHA-256 HASH: {HashedFileData}\nFILE SIZE: {fileSize} bytes\nFILE EXT: {fileExt}\n"
 
                                         if await checkingCleanData(HashedFileData, "All Extension"):
-                                            print(
-                                                f"File {filename} has already been checked and recorded in the clean data set!\n")
+                                            print(f"File {filename} has already been checked and recorded in the clean data set!\n")
                                             logMessage += "FILE SCAN SUMMARY: File already scanned as Safe To Download\n"
                                             if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                                await message.reply(
-                                                    f"File {filename} inside archive/disk image {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
+                                                await message.reply(f"File {filename} inside archive/disk image {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
                                             os.remove(filepath)
                                         elif await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
                                             logMessage += "FILE SCAN SUMMARY: File already flagged Malicious\n"
-                                            print(
-                                                f"File {filename} has already been checked and recorded in the malicious file set!")
-                                            await message.reply(
-                                                f"File {filename} inside {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
+                                            print(f"File {filename} has already been checked and recorded in the malicious file set!")
+                                            await message.reply(f"File {filename} inside {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
                                             await message.delete()
                                             await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                             print("Cleaning up process...")
@@ -3454,8 +3561,7 @@ async def on_message(message):
                                                     await logScanSession(f"{logMessage}\n\n")
                                                     return
                                             logMessage += "VIRUS TOTAL SCAN: Safe To Download"
-                                            if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(
-                                                    EXECUTABLEFORMATS):
+                                            if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(EXECUTABLEFORMATS):
                                                 await addingHashedData(HashedFileData, fileExt, False)
                                                 os.remove(filepath)
                             else:
@@ -3473,10 +3579,8 @@ async def on_message(message):
                                         HashedCompiledFileData = hashlib.sha256(await source.read()).hexdigest()
 
                                     if fileExt in EXECUTABLEFORMATS:
-                                        print(
-                                            f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                                        outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint,
-                                                                                 filename)
+                                        print(f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                        outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint, filename)
                                         if outputFilePath != "ERROR":
                                             async with aiofiles.open(outputFilePath, "rb") as file:
                                                 HashedDecompiledData = hashlib.sha256(await file.read()).hexdigest()
@@ -3493,17 +3597,14 @@ async def on_message(message):
 
                                     """SCAT Process with OpenAI and Gemini LLMs"""
                                     if fileExt in SCRIPTFILEFORMATS:
-                                        print(
-                                            f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                        print(f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                         print(f"Converting script file {filename} to PDF...")
                                         pdf = FPDF()
                                         pdf.add_page()
                                         pdf.set_font("Arial", size=12)
                                         pdfpath = f"{filepath.split(".")[0]}.pdf"
                                         async with aiofiles.open(filepath, "r", encoding="utf-8") as SourceCodefile:
-                                            pdf.multi_cell(0, 10, (await SourceCodefile.read()).encode("latin-1",
-                                                                                                       errors="replace").decode(
-                                                "latin-1"))
+                                            pdf.multi_cell(0, 10, (await SourceCodefile.read()).encode("latin-1", errors="replace").decode("latin-1"))
                                             pdf.output(pdfpath)
                                         filepath = pdfpath
                                         print(f"Conversion successes!")
@@ -3516,8 +3617,7 @@ async def on_message(message):
                                                 flaggedMalicious = True
                                                 print(f"{GPTMODEL} analyzed the content of being a potential malware!")
                                                 if len(GptScanResult) > 1500:
-                                                    print(
-                                                        f"Scan result exceeding 1500 words, creating a txt file to send the report...")
+                                                    print(f"Scan result exceeding 1500 words, creating a txt file to send the report...")
                                                     buffer = BytesIO()
                                                     buffer.write(GptScanResult.encode('utf-8'))
                                                     buffer.seek(0)
@@ -3534,8 +3634,7 @@ async def on_message(message):
                                                         f" deleted!")
 
                                         if not flaggedMalicious:
-                                            print(
-                                                f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
+                                            print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
                                             GeminiScanResult = await GeminiSCAT(filepath, f"# ROLE:\n"
                                                                                           f"You are a cybersecurity analyst on a file for potential malware detection\n"
                                                                                           f"# ASK:\n"
@@ -3546,11 +3645,9 @@ async def on_message(message):
                                             if GeminiScanResult.startswith(("True", "true")):
                                                 logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
                                                 flaggedMalicious = True
-                                                print(
-                                                    f"{GEMINIMODEL} analyzed the content of being a potential malware!")
+                                                print(f"{GEMINIMODEL} analyzed the content of being a potential malware!")
                                                 if len(GeminiScanResult) > 1500:
-                                                    print(
-                                                        f"Scan result exceeding 1500 words, creating a txt file to send the report...")
+                                                    print(f"Scan result exceeding 1500 words, creating a txt file to send the report...")
                                                     buffer = BytesIO()
                                                     buffer.write(GeminiScanResult.encode('utf-8'))
                                                     buffer.seek(0)
@@ -3587,8 +3684,7 @@ async def on_message(message):
                                         else:
                                             await addingHashedData(HashedScriptFileData, fileExt, False)
                                             for HashedData in CompiledHashedMap:
-                                                if CompiledHashedMap[
-                                                    HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                                if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
                                                     await addingHashedData(HashedData, ".exe", False)
                                                     break
                                             logMessage += f"FILE SCAN SUMMARY: File passed Virus Total, OpenAI and Gemini SCAT."
