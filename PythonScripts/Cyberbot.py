@@ -12,9 +12,9 @@ OperatingSystem = "MacOS" # Set this to the OS that the bot is running on
 
 print("Checking Essential System Binaries")
 if OperatingSystem == "MacOS":
-    systembinaries = ["7z", "qemu-img", "semgrep", "hdiutil", "java"]
+    systembinaries = ["7z", "qemu-img", "semgrep", "hdiutil", "java", "unar"]
 else:
-    systembinaries = ["7z", "qemu-img", "semgrep", "java"]
+    systembinaries = ["7z", "qemu-img", "semgrep", "java", "unar"]
 for systembinary in systembinaries:
     result = subprocess.run(["which", systembinary], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if f"{result.stderr}{result.stdout}":
@@ -1299,8 +1299,6 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                 if entry.filename.endswith('/'):
                                     os.makedirs(DestinationPath, exist_ok=True)
                                     print(f"Directory {entry.filename} created at path {DestinationPath}")
-                            if totalFileCount // (totalDuplicatedFile + 1) <= 0.10:
-                                return "Too many duplicated files!"
 
                         print(f"Extracting compressed file contents...")
                         """Second Extraction Focusing On Extracting All the Compressed Files"""
@@ -1369,8 +1367,6 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                 if "." not in entry.name:
                                     os.makedirs(DestinationPath, exist_ok=True)
                                     print(f"Directory {entry.name} created at path {DestinationPath}")
-                            if totalFileCount // (totalDuplicatedFile + 1) <= 0.10:
-                                return "Too many duplicated files!"
 
                         print(f"Extracting compressed file contents...")
                         """Second Extraction Focusing On Extracting All the Compressed Files"""
@@ -1438,8 +1434,6 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                                 if entry.filename.endswith('/'):
                                     os.makedirs(DestinationPath, exist_ok=True)
                                     print(f"Directory {entry.filename} created at path {DestinationPath}")
-                            if totalFileCount // (totalDuplicatedFile + 1) <= 0.10:
-                                return "Too many duplicated files!"
 
                         print(f"Extracting compressed file contents...")
                         """Second Extraction Focusing On Extracting All the Compressed Files"""
@@ -1503,26 +1497,28 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                             with bz2.BZ2File(filePath[i], 'rb') as bz2File:
                                 while True:
                                     dataChunk = bz2File.read(CHUNKSIZE)
-                                    if not dataChunk or len(fileData) >= UNCOMPRESSEDSIZELIMIT:
-                                        break
                                     fileData += dataChunk
+                                    uncompressedSize += len(dataChunk)
+                                    if not dataChunk or uncompressedSize >= UNCOMPRESSEDSIZELIMIT:
+                                        break
                         elif fileExt.endswith(".gz"):
                             print("Archive is a gzip file!")
                             with gzip.open(filePath[i], 'rb') as gzipRef:
                                 while True:
                                     dataChunk = gzipRef.read(CHUNKSIZE)
-                                    if not dataChunk or len(fileData) >= UNCOMPRESSEDSIZELIMIT:
-                                        break
                                     fileData += dataChunk
+                                    uncompressedSize += len(dataChunk)
+                                    if not dataChunk or uncompressedSize >= UNCOMPRESSEDSIZELIMIT:
+                                        break
                         elif fileExt.endswith((".xz", ".lzma")):
                             print("Archive is in xz and lzma category!")
                             with lzma.open(filePath[i], 'rb') as lzFile:
                                 while True:
                                     dataChunk = lzFile.read(CHUNKSIZE)
-                                    if not dataChunk or len(fileData) >= UNCOMPRESSEDSIZELIMIT:
-                                        break
                                     fileData += dataChunk
-                        uncompressedSize += len(fileData)
+                                    uncompressedSize += len(dataChunk)
+                                    if not dataChunk or uncompressedSize >= UNCOMPRESSEDSIZELIMIT:
+                                        break
                         if uncompressedSize >= UNCOMPRESSEDSIZELIMIT:
                             print(f"The total uncompressed size has reached the limit threshold!")
                             return "Potential Archive Bomb!"
@@ -2941,12 +2937,7 @@ async def manual_malware_scan(ctx, file_to_be_scanned: discord.Attachment):
 
                             if not flaggedMalicious:
                                 print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
-                                GeminiScanResult = await GeminiSCAT(filepath, f"# ROLE:\n"
-                                                                              f"You are a cybersecurity analyst on a file for potential malware detection\n"
-                                                                              f"# ASK:\n"
-                                                                              f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
-                                                                              f"# RESPONSE FORMAT:\n"
-                                                                              f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+                                GeminiScanResult = await GeminiSCAT(filepath)
 
                                 if GeminiScanResult.startswith(("True", "true")):
                                     logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
@@ -3635,12 +3626,7 @@ async def on_message(message):
 
                                         if not flaggedMalicious:
                                             print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
-                                            GeminiScanResult = await GeminiSCAT(filepath, f"# ROLE:\n"
-                                                                                          f"You are a cybersecurity analyst on a file for potential malware detection\n"
-                                                                                          f"# ASK:\n"
-                                                                                          f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
-                                                                                          f"# RESPONSE FORMAT:\n"
-                                                                                          f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+                                            GeminiScanResult = await GeminiSCAT(filepath)
 
                                             if GeminiScanResult.startswith(("True", "true")):
                                                 logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
