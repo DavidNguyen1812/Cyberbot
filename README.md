@@ -70,7 +70,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 | pandas | `== 3.0.2` | https://pandas.pydata.org |
 | matplotlib | `== 3.10.8` | https://matplotlib.org |
 | fpdf | `== `1.7.2` | https://github.com/reingart/pyfpdf |
-| google-genai | `== 1.66.0` | https://github.com/googleapis/python-genai |
+| google-genai | `== 2.7.0` | https://github.com/googleapis/python-genai |
 | transformers | `== 5.7.0` | https://github.com/huggingface/transformers |
 | torch | `== `2.11.0` | https://pytorch.org |
 | email-validator | `== `2.3.0` | https://github.com/JoshData/python-email-validator |
