@@ -188,7 +188,6 @@ LLMMODELINFORMATION = {
             "TPM": 500000
         }
 }
-LLMModels = [GPTMODEL, GEMINIMODEL]
 
 """Loading Pre-Trained Tokenizer Models"""
 print(f"Loading Pre-Trained Tokenizer Models...")
@@ -290,9 +289,10 @@ def plotBarCharts(datasets: list[dict], xLabels: list[str], suptitle: str, saveP
     plt.close(fig)
 
 
-def plotModelCalls(LLMModelUses: list[int], savePath: str):
+def plotModelCalls(LLMModels: list[str], LLMModelUses: list[int], savePath: str):
     """
     Description: Plotting a single bar chart showing the total calls per LLM models each month
+    :param LLMModels: The list of all the LLM models that has been used at least one
     :param LLMModelUses: The usage value of each LLM models
     :param savePath: The path to save the bar chart
     :return: None, the bar chart will be saved in the savePath
@@ -486,10 +486,15 @@ async def checking_expired_passwords_clear_dms_with_admins_update_llm_usages():
             try:
                 print(f"Updating LLMModelsUsed.png...")
                 await CronTaskLog("Cron Task: DAILY UPDATING LLMModelsUsed.png\n")
-                LLMModelUses = [0 for _ in range(len(LLMModels))]
+                LLMModels = []
+                LLMModelUses = []
                 for _, row in monthlyData.iterrows():
-                    LLMModelUses[LLMModels.index(row["LLM Models"])] += 1
-                plotModelCalls(LLMModelUses, f"{LLMUSAGELOGDIR}{previousYear}/{previousMonth}/LLMModelsUsed.png")
+                    if row["LLM Models"] not in LLMModels:
+                        LLMModels.append(row["LLM Models"])
+                        LLMModelUses.append(1)
+                    else:
+                        LLMModelUses[LLMModels.index(row["LLM Models"])] += 1
+                plotModelCalls(LLMModels, LLMModelUses, f"{LLMUSAGELOGDIR}{previousYear}/{previousMonth}/LLMModelsUsed.png")
                 print(f"Successfully Updating LLMModelsUsed.png!")
                 await CronTaskLog("Status: Success\n\n")
             except Exception as error:
