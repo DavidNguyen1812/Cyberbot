@@ -27,7 +27,7 @@ for systembinary in systembinaries:
 
 """Python Dependencies Check"""
 print("Checking Python Dependencies")
-dependencies = ["discord-py", "dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep", "email-validator"]
+dependencies = ["discord-py", "python-dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep", "email-validator"]
 for dependency in dependencies:
     result = subprocess.run(["pip", "show", dependency], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if "not found" in f"{result.stderr} {result.stdout}":
@@ -170,7 +170,7 @@ labels = {
         }
 }
 
-GPTclient = AsyncOpenAI(api_key=os.environ.get("CYBERBOTGPTKEY"))
+GPTclient = AsyncOpenAI()
 GeminiClient = genai.Client()
 GPTMODEL = "gpt-5.3-codex"
 GEMINIMODEL = "gemini-3.1-pro-preview"
