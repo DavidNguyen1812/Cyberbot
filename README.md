@@ -59,7 +59,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 | Python Dependency | Version | Source |
 |---|---|---|
 | discord-py | `== 2.5.2` | https://github.com/Rapptz/discord.py |
-| dotenv | `== 0.9.9` | https://github.com/pedroburon/dotenv |
+| python-dotenv | `== 1.2.2` | https://github.com/theskumar/python-dotenv |
 | filetype | `== 1.2.0` | https://github.com/h2non/filetype.py |
 | openai | `== 2.26.0` | https://github.com/openai/openai-python |
 | python-magic | `== 0.4.27` | http://github.com/ahupp/python-magic |
