@@ -5,8 +5,8 @@ from ghidra.util.task import ConsoleTaskMonitor
 
 def run():
     args = getScriptArgs()
-    program = currentProgram
-    output_path = args[0] if args else "/tmp/" + program.getName() + "_decompiled.c"
+    program = getCurrentProgram()
+    output_path = args[0] if args else "/tmp/" + program.getName() + "_decompiled.txt"
 
     monitor = ConsoleTaskMonitor()
     decompiler = DecompInterface()
