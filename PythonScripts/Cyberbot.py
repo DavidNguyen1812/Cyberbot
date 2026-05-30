@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 """Operating System Configuration"""
 OperatingSystem = "MacOS" # Set this to the OS that the bot is running on
-
 
 print("Checking Essential System Binaries")
 if OperatingSystem == "MacOS":
@@ -16,7 +16,7 @@ if OperatingSystem == "MacOS":
 else:
     systembinaries = ["7z", "qemu-img", "semgrep", "java", "unar"]
 for systembinary in systembinaries:
-    result = subprocess.run(["which", systembinary], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(["which", systembinary], capture_output=True, text=True)
     if f"{result.stderr}{result.stdout}":
         if "not found" in f"{result.stderr}{result.stdout}":
             raise ModuleNotFoundError(f"System binary {systembinary} NOT FOUND. Please install the system binary via brew or apt or compiled from source code for Cyberbot to function")
@@ -25,18 +25,21 @@ for systembinary in systembinaries:
     else:
         raise ModuleNotFoundError(f"System binary {systembinary} NOT FOUND. Please install the system binary via brew or apt or compiled from source code for Cyberbot to function")
 
+
 """Python Dependencies Check"""
 print("Checking Python Dependencies")
 dependencies = ["discord-py", "python-dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep", "email-validator"]
 for dependency in dependencies:
-    result = subprocess.run(["pip", "show", dependency], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if "not found" in f"{result.stderr} {result.stdout}":
+    result = subprocess.run(["pip", "show", dependency], capture_output=True, text=True)
+    if "not found" in f"{result.stderr}{result.stdout}":
         raise ModuleNotFoundError(f"Python dependency {dependency} NOT FOUND. Please install the dependency via pip in order for Cyberbot to function")
     else:
         print(f"Python dependency {dependency} FOUND.")
 
+
 """Ghidra Configuration"""
 GHIDRA_INSTALL_DIR = os.environ.get("GHIDRA_INSTALL_DIR")
+
 
 """Checking Ghidra and GhidraThon Installed Properly"""
 print("Checking Ghidra and Ghidrathon installation")
@@ -49,6 +52,7 @@ if os.path.exists(GHIDRA_INSTALL_DIR):
 else:
     raise ModuleNotFoundError(f"Ghidra NOT FOUND. Please install Ghidra following the instruction in the README.md!")
 
+
 import random
 import re
 import shutil
@@ -58,7 +62,7 @@ import datetime
 
 from discord import app_commands
 from discord.ext import commands, tasks
-from typing import Literal
+from typing import Literal, Tuple
 from email.message import EmailMessage
 from io import BytesIO
 from openai import AsyncOpenAI
@@ -901,7 +905,7 @@ async def openAISCAT(filepath: str) -> str:
                 await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
         return "MAXIMUM TOKEN LIMIT"
     else:
-        response = await GPTclient.responses.create(model=GPTMODEL,instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}])
+        response = await GPTclient.responses.create(model=GPTMODEL,instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}], store=False)
         await GPTclient.files.delete(fileID)
         outputPromptTokenCount = response.usage.total_tokens - inputPromptTokenCount
         print(f"Total Output Tokens: {outputPromptTokenCount}")
@@ -978,25 +982,24 @@ async def virusTotalURLScan(url: str) -> str:
             data = await response.json()
             scanID = data["data"]["id"]
             AnalysisUrl = f'https://www.virustotal.com/api/v3/analyses/{scanID}'
-            for attempt in range(10):
+            for attempt in range(15):
                 async with Cyberbot.session.get(AnalysisUrl, headers=headers, timeout=15) as analysisResponse:
                     if analysisResponse.status != 200:
-                        print("Error getting Analysis Results")
-                        return "URL can't be scanned"
+                        print("[Virus Total] Error getting Analysis Results")
+                        return "URL can't be scanned!"
                     analysis = await analysisResponse.json()
                     status = analysis["data"]["attributes"]["status"]
 
                     if status == "completed":
                         print(f"[Virus Total] Malicious counted:{analysis["data"]["attributes"]["stats"]['malicious']}")
                         return f"Malicious counted:{analysis["data"]["attributes"]["stats"]['malicious']}"
-
                 print(f"[Virus Total] Scan for {url} not finished yet (status={status}), retrying in {15}s...")
                 await asyncio.sleep(15)
-            else:
-                return "URL can't be scanned"
         else:
             print("[Virus Total] Error getting Analysis ID")
-            return "URL can't be scanned"
+            return "URL can't be scanned!"
+    print(f"[Virus Total] URL scan too long!")
+    return "URL scan too long!"
 
 
 async def virusTotalFileScan(filePath: str) -> str:
@@ -1009,11 +1012,9 @@ async def virusTotalFileScan(filePath: str) -> str:
     headers = {
         'x-apikey': virusTotalApiKey
     }
-
     async with aiofiles.open(filePath, "rb") as f:
         file = aiohttp.FormData()
         file.add_field('file', await f.read(), filename=os.path.basename(filePath))
-
     async with Cyberbot.session.post(HostUrl, headers=headers, data=file) as response:
         if response.status == 200:
             data = await response.json()
@@ -1023,7 +1024,7 @@ async def virusTotalFileScan(filePath: str) -> str:
                 async with Cyberbot.session.get(AnalysisUrl, headers=headers, timeout=15) as analysisResponse:
                     if analysisResponse.status != 200:
                         print("[Virus Total] Error getting Analysis Results")
-                        return "File can't be scanned"
+                        return "File can't be scanned!"
                     analysis = await analysisResponse.json()
                     status = analysis["data"]["attributes"]["status"]
 
@@ -1041,11 +1042,11 @@ async def virusTotalFileScan(filePath: str) -> str:
                         return f"{malicious}:{suspicious}:{harmless}:{undetected}"
                 print(f"[Virus Total] Scan for file {os.path.basename(filePath)} not finished yet (status={status}), retrying in {15}s...")
                 await asyncio.sleep(15)
-            return "File can't be scanned"
         else:
             print("[Virus Total] Error getting Analysis ID")
-            return "File can't be scanned"
-
+            return "File can't be scanned!"
+    print(f"[Virus Total] Scan operation for file {os.path.basename(filePath)} has taken too long!")
+    return "File scan too long!"
 
 def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str, archiveLayer=0) -> str:
     """
@@ -1201,7 +1202,7 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                 if fileExt.endswith((".dmg", ".img", ".udf")) and OperatingSystem == "MacOS":
                     print("Disk image in .dmg, .img, and .udf category")
                     print("Checking if disk image is encrypted...")
-                    checkEncryptedDiskfile = subprocess.run(["hdiutil", "isencrypted", filePath[i]], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    checkEncryptedDiskfile = subprocess.run(["hdiutil", "isencrypted", filePath[i]], capture_output=True, text=True)
                     checkEncryptedDiskfile = checkEncryptedDiskfile.stdout + checkEncryptedDiskfile.stderr
                     if "encrypted: YES" in checkEncryptedDiskfile:
                         print(f"Disk image {os.path.basename(filePath[i])} is encrypted!")
@@ -1211,6 +1212,7 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                         print("Getting mount point using hdiutil...")
                         try:
                             subprocess.run(["hdiutil", "attach", filePath[i], "-mountpoint", TempDiskMountPoint], check=True)
+                            # subprocess.run(["hdiutil", "attach", filePath[i], "-mountpoint", TempDiskMountPoint], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,  check=True)  # Uncomment this if you do not want the hdiutil process printing out to terminal
                         except subprocess.CalledProcessError:
                             print(f"Failed to mount disk image {os.path.basename(filePath[i])}")
                             return "Disk Image Error!"
@@ -1222,7 +1224,7 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                         else:
                             print("Disk image is in .img, .iso, .nrg, .dmg, and .udf category!")
                         print("Checking if disk image is encrypted...")
-                        checkEncryptedDiskfile = subprocess.run(["7z", "l", filePath[i]], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        checkEncryptedDiskfile = subprocess.run(["7z", "l", filePath[i]], capture_output=True, text=True)
                         checkEncryptedDiskfile = checkEncryptedDiskfile.stdout + checkEncryptedDiskfile.stderr
                         if "Enter password" in checkEncryptedDiskfile or "Headers Encrypted" in checkEncryptedDiskfile or "Encrypted = +" in checkEncryptedDiskfile:
                             print(f"Disk image {os.path.basename(filePath[i])} is encrypted!")
@@ -1232,7 +1234,7 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                     else:
                         print("Disk image in .vhd, .vhdx, .qcow2, .qcow, and .vmdk category")
                         print("Checking if disk image is encrypted...")
-                        checkEncryptedDiskfile = subprocess.run(["qemu-img", "info", filePath[i]], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        checkEncryptedDiskfile = subprocess.run(["qemu-img", "info", filePath[i]], capture_output=True, text=True)
                         checkEncryptedDiskfile = checkEncryptedDiskfile.stdout + checkEncryptedDiskfile.stderr
                         if "encrypted: yes" in checkEncryptedDiskfile:
                             print(f"Disk image {os.path.basename(filePath[i])} is encrypted!")
@@ -1242,7 +1244,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                             RawFilePath = f"{DOWNLOADINGDIRPATH}{os.path.basename(filePath[i]).split('.')[0]}.img"
                             print(f"Converting disk format to raw .img disk format using qemu-img...")
                             try:
-                                subprocess.run(["qemu-img", "convert", "-O", "raw", filePath[i], RawFilePath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                                subprocess.run(["qemu-img", "convert", "-O", "raw", filePath[i], RawFilePath], check=True)
+                                # subprocess.run(["qemu-img", "convert", "-O", "raw", filePath[i], RawFilePath], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, check=True) # Uncomment this if you do not want the qemu-img process printing out to terminal
                             except subprocess.CalledProcessError:
                                 print("Failed to convert disk to raw format using qemu-img")
                                 return "Disk Image Error!"
@@ -1252,7 +1255,8 @@ def ArchivesDiskImagesBombAnalysisAndExtraction(filePath: list, mountPoint: str,
                     os.mkdir(TempDiskMountPoint)
                     print(f"Extracting the disk content using  7z command...")
                     try:
-                        subprocess.run(["7z", "x", filePath[i], f"-o{TempDiskMountPoint}", "-y"], stdout=subprocess.DEVNULL, check=True)
+                        subprocess.run(["7z", "x", filePath[i], f"-o{TempDiskMountPoint}", "-y"], check=True)
+                        # subprocess.run(["7z", "x", filePath[i], f"-o{TempDiskMountPoint}", "-y"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, check=True) # Uncomment this if you do not want the 7z process printing out to terminal
                         print(f"Content extracted to temp mount point {TempDiskMountPoint}")
                     except subprocess.CalledProcessError:
                         print(f"Failed to extract content from disk image {filePath[i]}\n")
@@ -1721,24 +1725,7 @@ def ghidraDecompile(filepath: str, mountPoint: str, filename: str) -> str:
     print(f"Running Ghidra headless on: {filepath}")
 
     try:
-        result = subprocess.run(
-            cmd,
-            # stdout=subprocess.PIPE, # Enable the program to be able to read the output of the running process, uncomment this if you want to see the ghidra decompilation result
-            # stderr=subprocess.STDOUT, # Redirect stderr stream the same as stdout, uncomment this if you want to see the ghidra decompilation result
-            # text=True, uncomment this if you want to see the ghidra decompilation result
-            capture_output=False,
-            timeout=600,
-            env=env
-        )
-
-        '''
-        # uncomment this if you want to see the ghidra decompilation result
-        print("=== FULL GHIDRA OUTPUT ===")
-        print(result.stdout)
-        print("=== END OUTPUT ===")
-        print(f"Return code: {result.returncode}")
-        '''
-
+        subprocess.run(cmd, timeout=600, env=env, check=True)
         print(f"Decompilation and export complete. Cleaning up compiled file {filename}")
         os.remove(filepath)
         return outputFile
@@ -1750,7 +1737,6 @@ def ghidraDecompile(filepath: str, mountPoint: str, filename: str) -> str:
         print(f"[Ghidra ERROR] {e}")
         os.remove(filepath)
         return "ERROR"
-
 
 
 @Cyberbot.tree.command(
@@ -2658,592 +2644,149 @@ async def phishing_email_scan(ctx, email_content: str, keep_output_secret: Liter
         f"**PLEASE NOTE** that all the pre-trained encoder-transformer models were only trained on emails mostly written in English with a context window of 1500 tokens/words!")
 
 
-#  Command can run in any channels
-@Cyberbot.tree.command(
-    name="manual_malware_scan",
-    description="Manually scan the file content you provided with OpenAI, Gemini, and Virus Total"
-)
-@app_commands.describe(
-    file_to_be_scanned="Upload a single file to scan"
-)
-async def manual_malware_scan(ctx, file_to_be_scanned: discord.Attachment):
-    global FILEDOWNLOADCOUNTER, CURRENTSCANOPERATION
+async def processingUrls(URLs: list, message: discord.message.Message, logMessage: str, silent:bool) -> tuple(list, dict, str, bool):
+    """
+    Description: Preprocessing URL by validating URL access code, checking for ../ pattern
+    :param URLs: The list of URLs to be pre-processed
+    :param message: The Discord message object
+    :param logMessage: The current scan log message
+    :param silent: Is Cyberbot silent mode enable or not?
+    :return: A list of pre-processed URls, a dictionary mapping the URL that actually a Discord attachment, the final scan log message, and a boolean value to continue the scan or not
+    """
+    print("Detecting URLs in text content...")
+    if not silent:
+        await message.reply("Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
 
-    print(f"User {ctx.user.name} initiated Manual Malware Scan for file {file_to_be_scanned.filename}")
-    await ctx.response.defer()
-    if "../" in file_to_be_scanned.filename:
-        await ctx.followup.send( "Malware scan not performed for this file due to potential ../ attack in the file name scheme!")
-        await LoggingCommandBeingExecuted(ctx.user.name,f"/manual_malware_scan file temporary URL: {file_to_be_scanned.url}\nCommand Status: Denied/File name hinted potential ../ attack!")
-        print(f"Potential ../ attack! Reject scan process!\n\n")
-    else:
-        await LoggingCommandBeingExecuted(ctx.user.name,f"/manual_malware_scan file temporary URL: {file_to_be_scanned.url}\nCommand Status: Approved")
-        logMessage = (f"{time.ctime(time.time())}\n"
-                      f"ORIGIN AUTHOR: {ctx.user.name}\n"
-                      f"ORIGIN AUTHOR ID: {ctx.user.id}\n"
-                      f"ORIGIN DISCORD SERVER: {ctx.guild.name}\n"
-                      f"ORIGIN SERVER ID: {ctx.guild.id}\n"
-                      f"ORIGIN CHANNEL NAME: {ctx.channel.name}\n"
-                      f"ORIGIN CHANNEL ID: {ctx.channel.id}\n"
-                      f"FILE ATTACHMENT: {file_to_be_scanned.filename}\n")
-
-        filePath = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}"
-        scanOperation = False
-        sendingMessage = ""
-
-        """Checking if file size within the supported file size for scan"""
-        async with Cyberbot.session.head(file_to_be_scanned.url) as head:
-            FullContentLength = int(head.headers.get("Content-Length", 0))
-        logMessage += f"FILE SIZE: {FullContentLength} bytes\n"
-        if FullContentLength > 300000000:
-            logMessage += f"FILE SCAN SUMMARY: File attachment has a total size of {FullContentLength} bytes. Size exceeding Cyberbot file size limit of 300 MB\n"
-            await ctx.followup.send(
-                f"The file {file_to_be_scanned.filename} has a size {FullContentLength} bytes, which"
-                f" exceeding the file size limit that Cyberbot can support! The content won't be"
-                f" scanned!")
-            await logScanSession(f"{logMessage}\n\n")
-        else:
-            async with Cyberbot.session.get(file_to_be_scanned.url, headers=MAINHEADERS) as response:
-                if not response.status in range(400, 500):
-                    RootFileHashed = hashlib.sha256(await response.read()).hexdigest()
-                    logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
-
-                    """Checking file true extension"""
-                    RootFileTrueExt = await checkingRealFileExtension(await response.read(), file_to_be_scanned.filename)
-                    logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
-                    sendingMessage += f"The file {file_to_be_scanned.filename} extension is: {RootFileTrueExt}\n"
-                    filePath = f"{filePath}{RootFileTrueExt}"
-
-                    """Checking if there is another subroutine scanning the same file"""
-                    if CURRENTSCANOPERATION.get(RootFileHashed, "") == "In Progress":
-                        print(f"File {file_to_be_scanned.filename} is currently being scanned by other subroutine!")
-                        while True:
-                            await asyncio.sleep(0)
-                            if not CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                break
-                    else:
-                        CURRENTSCANOPERATION[RootFileHashed] = "In Progress"
-
-                    """Checking if file hashed signature already in clean or malicious data set"""
-                    if await checkingCleanData(RootFileHashed, "All Extension"):
-                        logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
-                        print(f"File {file_to_be_scanned.filename} has already been checked and recorded in the clean data set!\n\n")
-                        sendingMessage += f"File {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
-                    elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
-                        logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
-                        print(f"File {file_to_be_scanned.filename} has already been checked and recorded in the malicious file set!\n\n")
-                        sendingMessage += f"File {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!"
-                        await ctx.followup.send(sendingMessage)
-                        print(f"Scan Process Finish!\n\n")
-                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                            del CURRENTSCANOPERATION[RootFileHashed]
-                        await logScanSession(f"{logMessage}\n\n")
-                        return
-                    else:
-                        """Checking if file is encrypted"""
-                        if RootFileTrueExt.endswith(ENCRYPTEDFILEFORMATS):
-                            logMessage += "FILE SCAN SUMMARY: File attachment is encrypted. Cyberbot can not scan\n"
-                            print("File is encrypted, can not open without the key!")
-                            sendingMessage += f"The file {file_to_be_scanned.filename} is an encrypted file that may contain confidential or malware information, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advice not to download the file and decrypt it! If you have the key, you can decrypt the file but do not open it and send again for Cyberbot to scan!\n"
-                        else:
-                            if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
-                                print("Downloading attachment content...")
-                                async with aiofiles.open(filePath, "wb") as file:
-                                    await file.write(await response.read())
-                                print("Attachment file downloaded!")
-                                mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
-                                os.mkdir(mountPoint)
-                                print(f"Mount point {mountPoint} created!")
-                                scanOperation = True
-                                FILEDOWNLOADCOUNTER += 1
-                            else:
-                                logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
-                                print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
-                                sendingMessage += f"The file {file_to_be_scanned.filename} extension is outside of Cyberbot scope of file formats for malware analysis!\n"
-                else:
-                    logMessage += "FILE SCAN SUMMARY: File attachment can not be downloaded by Cyberbot for malware analysis!\n"
-                    print(f"Cyberbot can not retrieve the attachment for scan!")
-                    sendingMessage += f"Cyberbot can not retrieve {file_to_be_scanned.filename}!"
-
-            if scanOperation:
-                print(f"Start scanning {file_to_be_scanned.filename} contents with Virus Total...")
-                virusTotalResult = await virusTotalFileScan(filePath)
-                if virusTotalResult != "File can't be scanned":
-                    virusTotalResult = virusTotalResult.split(":")
-                    virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                    if int(virusTotalResult[0]) > 0:
-                        logMessage += "FILE SCAN SUMMARY: File attachment flagged as Malicious by VirusTotal\n"
-                        print(f"Virus Total analyzed file {file_to_be_scanned.filename} as malicious!")
-                        sendingMessage += f"The file {file_to_be_scanned.filename} was flagged malicious by Virus Total!\n{virusTotalReport}\n"
-                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                        os.remove(filePath)
-                        print("Cleaning up process...")
-                        shutil.rmtree(mountPoint)
-                        print(f"Scan Process Finish!\n\n")
-                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                            del CURRENTSCANOPERATION[RootFileHashed]
-                        await logScanSession(f"{logMessage}\n\n")
-                        await ctx.followup.send(sendingMessage)
-                        return
-                    logMessage += "VIRUS TOTAL SCAN: Safe To Download"
-                else:
-                    logMessage += "VIRUS TOTAL SCAN: Error\n"
-                    print(f"VirusTotal can not scan the attachment!")
-
-                if RootFileTrueExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
-                    print("Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
-                    FileUncompressedSize = await asyncio.to_thread(ArchivesDiskImagesBombAnalysisAndExtraction,[filePath], mountPoint)
-                    if FileUncompressedSize.startswith(("Encrypted Error", "Path Transversal Attack", "Potential Archive Bomb!", "Disk Image Error!", "Potential Recursive Archive Bomb Attack!", "Too many duplicated files!")):
-                        if FileUncompressedSize.startswith("Encrypted Error"):
-                            logMessage += f"FILE SCAN SUMMARY: File Attachment is an encrypted archive/disk file. Cyberbot can not scan encrypted content\n"
-                            print(f"Archive/Disk file encrypted!")
-                            sendingMessage += f"The archive/disk file {file_to_be_scanned.filename} contains an encrypted file that may contain confidential or malware, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advise not to download the file and decrypt it!\n"
-                        elif FileUncompressedSize.startswith("Path Transversal Attack"):
-                            logMessage += f"FILE SCAN SUMMARY: File Attachment contains an uncompressed content with potential path transversal attack scheme\n"
-                            print(f"Archive/Disk file detected potential path transversal attack!")
-                            sendingMessage += f"The file {file_to_be_scanned.filename} contains a file content with file name that can cause a path transversal attack!\n"
-                        elif FileUncompressedSize.startswith("Potential Archive Bomb!"):
-                            logMessage += f"FILE SCAN SUMMARY: File Attachment uncompressed size exceeding 32 GB. Potential archive/disk bomb\n"
-                            print(f"Archive/Disk file uncompressed size exceeding 32 GB!")
-                            sendingMessage += f"The file {file_to_be_scanned.filename} has an uncompressed size exceeding 32 GB, potential archive/diskImage bomb detected!\n"
-                        elif FileUncompressedSize.startswith("Disk Image Error!"):
-                            logMessage += f"FILE SCAN SUMMARY: File Attachment has a corrupted disk image\n"
-                            print(f"Archive/Disk file has corrupted disk image")
-                            sendingMessage += f"The file {file_to_be_scanned.filename} has a corrupted disk image!\n"
-                        elif FileUncompressedSize.startswith("Potential Recursive Archive Bomb Attack!"):
-                            logMessage += f"FILE SCAN SUMMARY: File Attachment has more than 3 duplicated archive/disk files. Potential recursive archive/disk bomb attack\n"
-                            print(f"Archive/Disk file has more than 3 duplicated archive/disk files")
-                            sendingMessage += f"The file {file_to_be_scanned.filename} has more than 3 duplicated archive/disk files within it compressed content! This could be a hint for a potential Recursive Archive/Disk Bomb Attack!\n"
-                        else:
-                            logMessage += f"FILE SCAN SUMMARY: File Attachment is an archive/disk image with too many duplicated content. A hint for a potential Archive/Disk Bomb Attack Method that extract many duplicated content to fill up storage space!\n"
-                            print(f"Archive/Disk file has too many duplicated contents")
-                            sendingMessage += f"The file {file_to_be_scanned.filename} has too many duplicated files within it compressed content! This is a hint for a potential Archive/Disk Bomb Attack Method that extract many duplicated content to fill up storage space!\n"
-                        if not FileUncompressedSize.startswith("Encrypted Error"):
-                            await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                        print("Cleaning up process...")
-                        shutil.rmtree(mountPoint)
-                        print(f"Scan Process Finish!\n\n")
-                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                            del CURRENTSCANOPERATION[RootFileHashed]
-                        await logScanSession(f"{logMessage}\n\n")
-                        await ctx.followup.send(sendingMessage)
-                        return
-
-                    ufs = uncompressedFileStructure(mountPoint, indent="")
-
-                    logMessage += f"FILE UNCOMPRESSION SUMMARY: The file uncompressed size {FileUncompressedSize.split('|')[0]} bytes and {FileUncompressedSize.split('|')[1]} duplicated content.\nUNCOMPRESSED FILE STRUCTURE:\n{ufs}\n"
-                    sendingMessage += f"The file {file_to_be_scanned.filename} has an uncompressed size of {FileUncompressedSize.split('|')[0]} bytes, which below the standard threshold uncompressed size of 32 GB to be flagged as archive/diskImage bomb!\nBegin the scanning process on the uncompressed content, which may take quite some time. There are {FileUncompressedSize.split('|')[1]} duplicated content to be aware of!\nThe Uncompressed File Structure of {file_to_be_scanned.filename} are:\n{ufs}"
-                    print(f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
-                    for dirpath, _, filenames in os.walk(mountPoint):
-                        for filename in filenames:
-                            logMessage += f"UNCOMPRESSED FILE INSIDE ARCHIVE {file_to_be_scanned.filename}: {filename}\n"
-                            filepath = os.path.join(dirpath, filename)
-                            fileSize = os.path.getsize(filepath)
-                            async with aiofiles.open(filepath, mode="rb") as source:
-                                fileExt = await checkingRealFileExtension(await source.read(), filename)
-                                HashedFileData = hashlib.sha256(await source.read()).hexdigest()
-                            print(f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                            logMessage += f"SHA-256 HASH: {HashedFileData}\nFILE SIZE: {fileSize} bytes\nFILE EXT: {fileExt}\n"
-
-                            if await checkingCleanData(HashedFileData, "All Extension"):
-                                print(f"File {filename} has already been checked and recorded in the clean data set!\n")
-                                logMessage += "FILE SCAN SUMMARY: File already scanned as Safe To Download\n"
-                                sendingMessage += f"File {filename} inside archive/disk image {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
-                                os.remove(filepath)
-                            elif await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
-                                logMessage += "FILE SCAN SUMMARY: File already flagged Malicious\n"
-                                print(f"File {filename} has already been checked and recorded in the malicious file set!")
-                                sendingMessage += f"File {filename} inside {file_to_be_scanned.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!\n"
-                                await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                print("Cleaning up process...")
-                                shutil.rmtree(mountPoint)
-                                print(f"Scan Process Finish!\n\n")
-                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                    del CURRENTSCANOPERATION[RootFileHashed]
-                                await logScanSession(f"{logMessage}\n\n")
-                                await ctx.followup.send(sendingMessage)
-                                return
-                            else:
-                                print(f"Start Virus Total Scan on {filename}...")
-                                virusTotalResult = await virusTotalFileScan(filepath)
-                                if virusTotalResult != "File can't be scanned":
-                                    virusTotalResult = virusTotalResult.split(":")
-                                    virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                                    if int(virusTotalResult[0]) > 0:
-                                        logMessage += "FILE SCAN SUMMARY: VirusTotal flagged as Malicious\n"
-                                        print(f"Virus Total analyzed file {filename} as malicious!")
-                                        sendingMessage += f"File {filename} inside archive/disk image {file_to_be_scanned.filename} was flagged malicious by Virus Total!\n{virusTotalReport}"
-                                        await addingHashedData(HashedFileData, fileExt, True)
-                                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                        print("Cleaning up process...")
-                                        shutil.rmtree(mountPoint)
-                                        print(f"Scan Process Finish!\n\n")
-                                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                            del CURRENTSCANOPERATION[RootFileHashed]
-                                        await logScanSession(f"{logMessage}\n\n")
-                                        await ctx.followup.send(sendingMessage)
-                                        return
-                                logMessage += "VIRUS TOTAL SCAN: Safe To Download"
-                                if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(EXECUTABLEFORMATS):
-                                    await addingHashedData(HashedFileData, fileExt, False)
-                                    os.remove(filepath)
-                else:
-                    shutil.move(filePath, mountPoint)
-                    print(f"Content has been moved to main scan directory {mountPoint}")
-
-                CompiledHashedMap = {}
-                print(f"Start scanning for COMPILED/EXECUTABLE file contents ONLY at {mountPoint}...")
-                for dirpath, _, filenames in os.walk(mountPoint):
-                    for filename in filenames:
-                        filepath = os.path.join(dirpath, filename)
-                        fileSize = os.path.getsize(filepath)
-                        async with aiofiles.open(filepath, "rb") as source:
-                            fileExt = await checkingRealFileExtension(await source.read(), filename)
-                            HashedCompiledFileData = hashlib.sha256(await source.read()).hexdigest()
-
-                        if fileExt in EXECUTABLEFORMATS:
-                            print(f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                            outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint, filename)
-                            if outputFilePath != "ERROR":
-                                async with aiofiles.open(outputFilePath, "rb") as file:
-                                    HashedDecompiledData = hashlib.sha256(await file.read()).hexdigest()
-                                CompiledHashedMap[HashedCompiledFileData] = HashedDecompiledData
-
-                print(f"Start scanning for SCRIPT file contents ONLY at {mountPoint}...")
-                for dirpath, _, filenames in os.walk(mountPoint):
-                    for filename in filenames:
-                        filepath = os.path.join(dirpath, filename)
-                        fileSize = os.path.getsize(filepath)
-                        async with aiofiles.open(filepath, "rb") as source:
-                            fileExt = await checkingRealFileExtension(await source.read(), filename)
-                            HashedScriptFileData = hashlib.sha256(await source.read()).hexdigest()
-
-                        """SCAT Process with OpenAI and Gemini LLMs"""
-                        if fileExt in SCRIPTFILEFORMATS:
-                            print(f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                            print(f"Converting script file {filename} to PDF...")
-                            pdf = FPDF()
-                            pdf.add_page()
-                            pdf.set_font("Arial", size=12)
-                            pdfpath = f"{filepath.split(".")[0]}.pdf"
-                            async with aiofiles.open(filepath, "r", encoding="utf-8") as SourceCodefile:
-                                pdf.multi_cell(0, 10,(await SourceCodefile.read()).encode("latin-1", errors="replace").decode("latin-1"))
-                                pdf.output(pdfpath)
-                            filepath = pdfpath
-                            print(f"Conversion successes!")
-                            flaggedMalicious = False
-                            if not flaggedMalicious:
-                                print(f"Start {GPTMODEL} scan on file {filename} for malware analysis...")
-                                GptScanResult = await openAISCAT(filepath)
-                                if GptScanResult.startswith(("True", "true")):
-                                    logMessage += f"FILE SCAN SUMMARY: {GPTMODEL} flagged as Malicious\n"
-                                    flaggedMalicious = True
-                                    print(f"{GPTMODEL} analyzed the content of being a potential malware!")
-                                    sendingMessage += f"{GPTMODEL} scan result: {GptScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
-
-                            if not flaggedMalicious:
-                                print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
-                                GeminiScanResult = await GeminiSCAT(filepath)
-
-                                if GeminiScanResult.startswith(("True", "true")):
-                                    logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
-                                    flaggedMalicious = True
-                                    print(f"{GEMINIMODEL} analyzed the content of being a potential malware!")
-                                    sendingMessage += f"{GEMINIMODEL} scan result: {GeminiScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
-
-                            if flaggedMalicious:
-                                if HashedScriptFileData == RootFileHashed:
-                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                else:
-                                    await addingHashedData(HashedScriptFileData, fileExt, True)
-                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                    for HashedData in CompiledHashedMap:
-                                        if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
-                                            await addingHashedData(HashedData, ".exe", True)
-                                            break
-                                print("Cleaning up process...")
-                                shutil.rmtree(mountPoint)
-                                print(f"Scan Process Finish!\n\n")
-                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                    del CURRENTSCANOPERATION[RootFileHashed]
-                                await logScanSession(f"{logMessage}\n\n")
-                                if len(sendingMessage) > 1500:
-                                    buffer = BytesIO()
-                                    buffer.write(sendingMessage.encode('utf-8'))
-                                    buffer.seek(0)
-                                    resultFile = discord.File(fp=buffer, filename="ScanResult.txt")
-                                    await ctx.followup.send(file=resultFile)
-                                else:
-                                    await ctx.followup.send(sendingMessage)
-                                return
-                            else:
-                                await addingHashedData(HashedScriptFileData, fileExt, False)
-                                for HashedData in CompiledHashedMap:
-                                    if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
-                                        await addingHashedData(HashedData, ".exe", False)
-                                        break
-                                logMessage += f"FILE SCAN SUMMARY: File passed Virus Total, OpenAI and Gemini SCAT."
-                print("Cleaning up process...")
-                shutil.rmtree(mountPoint)
-                await addingHashedData(RootFileHashed, RootFileTrueExt, False)
-                sendingMessage += f"The file {file_to_be_scanned.filename} is safe to download!\n"
-                print(f"Scan Process Finish!\n\n")
-            if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                del CURRENTSCANOPERATION[RootFileHashed]
-        if len(sendingMessage) > 1500:
-            buffer = BytesIO()
-            buffer.write(sendingMessage.encode('utf-8'))
-            buffer.seek(0)
-            resultFile = discord.File(fp=buffer, filename="ScanResult.txt")
-            await ctx.followup.send(file=resultFile)
-        else:
-            await ctx.followup.send(sendingMessage)
-        await logScanSession(f"{logMessage}\n\n")
-
-
-@Cyberbot.event
-async def on_message_edit(before, after):
-    global CURRENTSCANOPERATION
-
-    await Cyberbot.process_commands(after)
-
-    if after.author == Cyberbot.user:
-        return
-
-    if str(after.channel) == "Direct Message with Unknown User":
-        return
-
-    """Adding new server ID to Configuration file"""
-    if not CyberBotConfigData["Non-monitoring-Channels"].get(str(after.guild.id), ""):
-        CyberBotConfigData["Non-monitoring-Channels"][str(after.guild.id)] = []
-    if not CyberBotConfigData["Silent-Mode"].get(str(after.guild.id), ""):
-        CyberBotConfigData["Silent-Mode"][str(after.guild.id)] = "False"
-    if not CyberBotConfigData["Automation-Mode"].get(str(after.guild.id), ""):
-        CyberBotConfigData["Automation-Mode"][str(after.guild.id)] = "True"
-    async with ConfigLock:
-        async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
-            await file.write(json.dumps(CyberBotConfigData, indent=4))
-
-    """Checking if the current channel is in the server non monitoring list"""
-    if after.channel.id in CyberBotConfigData["Non-monitoring-Channels"][str(after.guild.id)]:
-        return
-
-    if before.content != after.content:
-        print("Re-edited Message Detected!")
-        if after.content:
-            URLs = re.findall(r'https?://(?:(?!https?://)\S)+', after.content.replace(" ", ""))
-            URLs = list(set(URLs))
-        else:
-            URLs = ""
-
-        if URLs:
-            logMessage = (f"{time.ctime(time.time())}\n"
-                          f"ORIGIN AUTHOR: {after.author.name}\n"
-                          f"ORIGIN AUTHOR ID: {after.author.id}\n"
-                          f"ORIGIN DISCORD SERVER: {after.guild.name}\n"
-                          f"ORIGIN SERVER ID: {after.guild.id}\n"
-                          f"ORIGIN CHANNEL NAME: {after.channel.name}\n"
-                          f"ORIGIN CHANNEL ID: {after.channel.id}\n")
-
-            if CyberBotConfigData["Automation-Mode"][str(after.guild.id)] == "True":
-                if URLs:
-                    print("Detecting URLs in text content...")
-                    if not CyberBotConfigData["Silent-Mode"][str(after.guild.id)] == "True":
-                        await after.reply("Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
-
-                    """URL access validation"""
-                    resolvedUrls = []
-                    for url in URLs:
-                        print(f"Found URL: {url}")
-                        if "../" in unquote(url):
-                            logMessage += f"URL SCAN SUMMARY: URL {url} name query hinted potential directory transversal attack!\n\n"
-                            print(f"URL {url} contains ../ attack pattern!\n\n")
-                            await logScanSession(logMessage)
-                            await after.reply(f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
-                            await after.delete()
-                            return
-                        if url.startswith("https://klipy.com/gifs/"):
-                            print(f"URL {url} is a Klipy gif, getting the real gif URL...")
-                            klipyUrl = await isKlipyURLValid(url)
-                            if klipyUrl != "Invalid":
-                                print(f"Klipy URL is valid!")
-                                resolvedUrls.append(klipyUrl)
-                            else:
-                                print(f"Klipy URL is invalid!")
-                                logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
-                                await after.reply(f"Cyberbot cannot access URL {url}")
-                        else:
-                            if url.startswith("https://tenor.com/view"):
-                                print(f"URL {url} is a Tenor gif, getting the real gif URL...")
-                                tenorUrl = await isTenorURLValid(url)
-                                if tenorUrl != "Invalid":
-                                    print(f"Tenor URL is valid!")
-                                    resolvedUrls.append(tenorUrl)
-                                else:
-                                    print(f"Tenor URL is invalid!")
-                                    logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
-                                    await after.reply(f"Cyberbot cannot access URL {url}")
-                            else:
-                                try:
-                                    async with Cyberbot.session.get(url, headers=MAINHEADERS) as testValidURLResponse:
-                                        if testValidURLResponse.status in range(400, 500):
-                                            logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
-                                            print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
-                                            print(f"URL {url} status code: {testValidURLResponse.status}")
-                                            await after.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
-                                        else:
-                                            resolvedUrls.append(url)
-                                except Exception as error:
-                                    print(f"Can not access URL {url}\nError: {error}")
-                                    logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Error {error}\n"
-                                    await after.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
-                    URLs = resolvedUrls
-
-                    """VirusTotal URL scan"""
-                    for url in URLs:
-                        hashedUrl = hashlib.sha256(url.encode('utf-8')).hexdigest()
-                        logMessage += f"URL IN MESSAGE: {url}\nSHA-256 HASH: {hashedUrl}\n"
-
-                        """Checking if there is another subroutine scanning the same URL"""
-                        if CURRENTSCANOPERATION.get(hashedUrl, "") == "In Progress":
-                            print(f"URL {url} is currently being scanned by other subroutine!")
-                            while True:
-                                await asyncio.sleep(0)
-                                if not CURRENTSCANOPERATION.get(hashedUrl, ""):
-                                    break
-                        else:
-                            CURRENTSCANOPERATION[hashedUrl] = "In Progress"
-
-                        if await checkingCleanData(hashedUrl, "URLs"):
-                            logMessage += "URL SCAN SUMMARY: Already been scanned as safe to visit\n"
-                            print(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit")
-                            if not CyberBotConfigData["Silent-Mode"][str(after.guild.id)] == "True":
-                                await after.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit", suppress_embeds=True)
-                        elif await checkingFlaggedMaliciousData(hashedUrl, "URLs"):
-                            logMessage += "URL SCAN SUMMARY: Already been scanned as malicious\n\n"
-                            print(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious\n\n")
-                            await after.reply("URL: {url} has been checked in Cyberbot scan history and recorded as malicious", suppress_embeds=True)
-                            await after.delete()
-                        else:
-                            UrlScanResult = await virusTotalURLScan(url)
-                            if UrlScanResult == "URL can't be scanned":
-                                logMessage += f"URL SCAN SUMMARY: VirusTotal can not scan\n"
-                                print(f"URL {url} can't be scanned by Virus Total")
-                                await after.reply(f"URL {url} can't be scanned by Virus Total", suppress_embeds=True)
-                            elif int(UrlScanResult.split(":")[1]) > 0:
-                                logMessage += f"URL SCAN SUMMARY: VirusTotal flagged as malicious\n"
-                                print(f"URL {url} flagged malicious by Virus Total")
-                                await addingHashedData(hashedUrl, "URLs", True)
-                                await after.channel.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
-                                await after.delete()
-                            else:
-                                logMessage += f"URL SCAN SUMMARY: VirusTotal scanned as Clean/Safe To Visit\n"
-                                print(f"URL {url} passed Virus Total scan as Safe to visit!")
-                                await addingHashedData(hashedUrl, "URLs", False)
-                                if not CyberBotConfigData["Silent-Mode"][str(after.guild.id)] == "True":
-                                    await after.reply(f"URL {url} is safe to visit", suppress_embeds=True)
-                        if CURRENTSCANOPERATION.get(hashedUrl, ""):
-                            del CURRENTSCANOPERATION[hashedUrl]
-                    print(f"URLs scan finished!\n\n")
+    resolvedUrls = []
+    fileAttachmentUrls = {}
+    for url in URLs:
+        print(f"Found URL: {url}")
+        """Checking ../ attack pattern"""
+        if "../" in unquote(url):
+            logMessage += f"URL SCAN SUMMARY: URL {url} name query hinted potential directory transversal attack!\n\n"
+            print(f"URL {url} contains ../ attack pattern!\n\n")
+            await message.reply(f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
+            await message.delete()
+            return [], {}, logMessage, False
+        """Resolving Klipy URL"""
+        if url.startswith("https://klipy.com/gifs/"):
+            print(f"URL {url} is a Klipy gif, getting the real gif URL...")
+            klipyUrl = await isKlipyURLValid(url)
+            if klipyUrl != "Invalid":
+                print(f"Klipy URL is valid!")
+                resolvedUrls.append(klipyUrl)
             else:
-                logMessage += f"SCAN SUMMARY: Cyberbot detected the message but automation scan mode is disabled for this server, so no scan is done!\n\n"
-                await logScanSession(logMessage)
+                print(f"Klipy URL is invalid!")
+                logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
+                await message.reply(f"Cyberbot cannot access URL {url}")
+        else:
+            """Resolving Tenor URL"""
+            if url.startswith("https://tenor.com/view"):
+                print(f"URL {url} is a Tenor gif, getting the real gif URL...")
+                tenorUrl = await isTenorURLValid(url)
+                if tenorUrl != "Invalid":
+                    print(f"Tenor URL is valid!")
+                    resolvedUrls.append(tenorUrl)
+                else:
+                    print(f"Tenor URL is invalid!")
+                    logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
+                    await message.reply(f"Cyberbot cannot access URL {url}")
+            else:
+                """URL access validation"""
+                try:
+                    async with Cyberbot.session.get(url, headers=MAINHEADERS) as testValidURLResponse:
+                        if testValidURLResponse.status in range(400, 500):
+                            logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
+                            print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
+                            await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
+                        else:
+                            if url.startswith("https://cdn.discordapp.com/attachments/"):
+                                print(f"URL is a Discord attachment!!! Will scan URL as an attachment file!")
+                                fileAttachmentUrls[url] = os.path.basename(url).split('?')[0]
+                            else:
+                                resolvedUrls.append(url)
+                except Exception as error:
+                    print(f"Can not access URL {url}\nError: {error}")
+                    logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Error {error}\n"
+                    await message.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
+    return resolvedUrls, fileAttachmentUrls, logMessage, True
 
 
-@Cyberbot.event
-async def on_message(message):
-    global FILEDOWNLOADCOUNTER, CURRENTSCANOPERATION
+async def CyberBotScan(message: discord.message.Message | discord.interactions.Interaction, isEdit:bool=False,  manualScan:bool=False, manualFileAttachment: discord.Attachment|None=None ) -> None:
+    """
+    Description: Cyberbot main security scanning pipeline
+    :param message: The Discord message object
+    :param isEdit: Is the message scan a re-edit message or not
+    :param manualScan: Is this a manual scan or not
+    :param manualFileAttachment: The file attachment user upload via /manual_malware_scan command
+    :return: None
+    """
+    global CURRENTSCANOPERATION, FILEDOWNLOADCOUNTER
 
-    await Cyberbot.process_commands(message)
+    if manualScan:
+        if message.user == Cyberbot.user or str(message.channel) == "Direct Message with Unknown User":
+            return
+    else:
+        if message.author == Cyberbot.user or str(message.channel) == "Direct Message with Unknown User":
+            return
 
-    if message.author == Cyberbot.user:
-        return
-
-    if str(message.channel) == "Direct Message with Unknown User":
-        return
-
+    guildId = str(message.guild.id)
     """Adding new server ID to Configuration file"""
-    if not CyberBotConfigData["Non-monitoring-Channels"].get(str(message.guild.id), ""):
-        CyberBotConfigData["Non-monitoring-Channels"][str(message.guild.id)] = []
-    if not CyberBotConfigData["Silent-Mode"].get(str(message.guild.id), ""):
-        CyberBotConfigData["Silent-Mode"][str(message.guild.id)] = "False"
-    if not CyberBotConfigData["Automation-Mode"].get(str(message.guild.id), ""):
-        CyberBotConfigData["Automation-Mode"][str(message.guild.id)] = "True"
+    if not CyberBotConfigData["Non-monitoring-Channels"].get(guildId, ""):
+        CyberBotConfigData["Non-monitoring-Channels"][guildId] = []
+    if not CyberBotConfigData["Silent-Mode"].get(guildId, ""):
+        CyberBotConfigData["Silent-Mode"][guildId] = "False"
+    if not CyberBotConfigData["Automation-Mode"].get(guildId, ""):
+        CyberBotConfigData["Automation-Mode"][guildId] = "True"
     async with ConfigLock:
         async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
             await file.write(json.dumps(CyberBotConfigData, indent=4))
 
-    """Checking if the current channel is in the server non monitoring list"""
-    if message.channel.id in CyberBotConfigData["Non-monitoring-Channels"][str(message.guild.id)]:
-        return
-
-    if message.content:
-        URLs = re.findall(r'https?://(?:(?!https?://)\S)+', message.content.replace(" ", ""))
-        URLs = list(set(URLs))
+    if not manualScan:
+        isSilent = CyberBotConfigData["Silent-Mode"][guildId] == "True"
     else:
-        URLs = ""
+        isSilent = True
 
-    if URLs or len(message.attachments) > 0:
-        logMessage = (f"{time.ctime(time.time())}\n"
-                      f"ORIGIN AUTHOR: {message.author.name}\n"
-                      f"ORIGIN AUTHOR ID: {message.author.id}\n"
-                      f"ORIGIN DISCORD SERVER: {message.guild.name}\n"
-                      f"ORIGIN SERVER ID: {message.guild.id}\n"
-                      f"ORIGIN CHANNEL NAME: {message.channel.name}\n"
-                      f"ORIGIN CHANNEL ID: {message.channel.id}\n")
+    sendingMessage = ""
+    scan = False
+    URLs = []
 
-        if CyberBotConfigData["Automation-Mode"][str(message.guild.id)] == "True":
-            if URLs:
-                print("Detecting URLs in text content...")
-                if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                    await message.reply("Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
+    if not manualScan:
+        if message.content:
+            URLs = re.findall(r'https?://(?:(?!https?://)\S)+', message.content.replace(" ", ""))
+            URLs = list(set(URLs))
+        if URLs or len(message.attachments) > 0:
+            scan = True
+    else:
+        scan = True
+    if scan:
+        if not manualScan:
+            logMessage = (f"{time.ctime(time.time())}\n"
+                          f"ORIGIN AUTHOR: {message.author.name}\n"
+                          f"ORIGIN AUTHOR ID: {message.author.id}\n"
+                          f"ORIGIN DISCORD SERVER: {message.guild.name}\n"
+                          f"ORIGIN SERVER ID: {message.guild.id}\n"
+                          f"ORIGIN CHANNEL NAME: {message.channel.name}\n"
+                          f"ORIGIN CHANNEL ID: {message.channel.id}\n")
+        else:
+            logMessage = (f"{time.ctime(time.time())}\n"
+                          f"ORIGIN AUTHOR: {message.user.name}\n"
+                          f"ORIGIN AUTHOR ID: {message.user.id}\n"
+                          f"ORIGIN DISCORD SERVER: {message.guild.name}\n"
+                          f"ORIGIN SERVER ID: {message.guild.id}\n"
+                          f"ORIGIN CHANNEL NAME: {message.channel.name}\n"
+                          f"ORIGIN CHANNEL ID: {message.channel.id}\n")
 
-                """URL access validation"""
-                resolvedUrls = []
-                for url in URLs:
-                    print(f"Found URL: {url}")
-                    if "../" in unquote(url):
-                        logMessage += f"URL SCAN SUMMARY: URL {url} name query hinted potential directory transversal attack!\n\n"
-                        print(f"URL {url} contains ../ attack pattern!\n\n")
-                        await logScanSession(logMessage)
-                        await message.reply(f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
-                        await message.delete()
-                        return
-                    if url.startswith("https://klipy.com/gifs/"):
-                        print(f"URL {url} is a Klipy gif, getting the real gif URL...")
-                        klipyUrl = await isKlipyURLValid(url)
-                        if klipyUrl != "Invalid":
-                            print(f"Klipy URL is valid!")
-                            resolvedUrls.append(klipyUrl)
-                        else:
-                            print(f"Klipy URL is invalid!")
-                            logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
-                            await message.reply(f"Cyberbot cannot access URL {url}")
-                    else:
-                        if url.startswith("https://tenor.com/view"):
-                            print(f"URL {url} is a Tenor gif, getting the real gif URL...")
-                            tenorUrl = await isTenorURLValid(url)
-                            if tenorUrl != "Invalid":
-                                print(f"Tenor URL is valid!")
-                                resolvedUrls.append(tenorUrl)
-                            else:
-                                print(f"Tenor URL is invalid!")
-                                logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
-                                await message.reply(f"Cyberbot cannot access URL {url}")
-                        else:
-                            try:
-                                async with Cyberbot.session.get(url, headers=MAINHEADERS) as testValidURLResponse:
-                                    if testValidURLResponse.status in range(400, 500):
-                                        logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
-                                        print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
-                                        print(f"URL {url} status code: {testValidURLResponse.status}")
-                                        await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
-                                    else:
-                                        resolvedUrls.append(url)
-                            except Exception as error:
-                                print(f"Can not access URL {url}\nError: {error}")
-                                logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Error {error}\n"
-                                await message.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
-                URLs = resolvedUrls
+        """Checking if the current channel is in the server non monitoring list"""
+        if message.channel.id in CyberBotConfigData["Non-monitoring-Channels"][str(message.guild.id)] and not manualScan:
+            logMessage += f"SCAN SUMMARY: Cyberbot detected the message but the channel is in the exclusion list for this server, so no scan is done!\n\n"
+            await logScanSession(logMessage)
+        else:
+            fileAttachmentUrls = {}
+            if URLs and not manualScan:
+                URLs, fileAttachmentUrls, logMessage, continueScan = await processingUrls(URLs, message, logMessage, isSilent)
+                if not continueScan:
+                    await logScanSession(logMessage)
 
                 """VirusTotal URL scan"""
                 for url in URLs:
@@ -3253,6 +2796,8 @@ async def on_message(message):
                     """Checking if there is another subroutine scanning the same URL"""
                     if CURRENTSCANOPERATION.get(hashedUrl, "") == "In Progress":
                         print(f"URL {url} is currently being scanned by other subroutine!")
+                        if not isSilent:
+                            await message.reply(f"Another scan process for the URL {url} is under progressed...")
                         while True:
                             await asyncio.sleep(0)
                             if not CURRENTSCANOPERATION.get(hashedUrl, ""):
@@ -3260,437 +2805,522 @@ async def on_message(message):
                     else:
                         CURRENTSCANOPERATION[hashedUrl] = "In Progress"
 
+                    """Checking URL SHA256 hash"""
                     if await checkingCleanData(hashedUrl, "URLs"):
                         logMessage += "URL SCAN SUMMARY: Already been scanned as safe to visit\n"
                         print(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit")
-                        if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
+                        if not isSilent:
                             await message.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as safe to visit", suppress_embeds=True)
                     elif await checkingFlaggedMaliciousData(hashedUrl, "URLs"):
-                        logMessage += "URL SCAN SUMMARY: Already been scanned as malicious\n\n"
+                        logMessage += "URL SCAN SUMMARY: Already been scanned as malicious\n"
                         print(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious\n\n")
                         await message.reply(f"URL: {url} has been checked in Cyberbot scan history and recorded as malicious", suppress_embeds=True)
                         await message.delete()
                     else:
                         UrlScanResult = await virusTotalURLScan(url)
-                        if UrlScanResult == "URL can't be scanned":
+                        if UrlScanResult == "URL can't be scanned!":
                             logMessage += f"URL SCAN SUMMARY: VirusTotal can not scan\n"
                             print(f"URL {url} can't be scanned by Virus Total")
-                            await message.reply(f"URL {url} can't be scanned by Virus Total", suppress_embeds=True)
-                        elif int(UrlScanResult.split(":")[1]) > 0:
-                            logMessage += f"URL SCAN SUMMARY: VirusTotal flagged as malicious\n"
-                            print(f"URL {url} flagged malicious by Virus Total")
-                            await addingHashedData(hashedUrl, "URLs", True)
-                            await message.channel.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
-                            await message.delete()
+                            await message.reply(f"URL {url} can't be scanned by Virus Total!", suppress_embeds=True)
+                        elif UrlScanResult == "URL scan too long!":
+                            logMessage += f"URL SCAN SUMMARY: VirusTotal scan too long!\n"
+                            print(f"URL {url} can't be scanned by Virus Total")
+                            await message.reply(f"URL {url} scanned by Virus Total took too long!", suppress_embeds=True)
                         else:
-                            logMessage += f"URL SCAN SUMMARY: VirusTotal scanned as Clean/Safe To Visit\n"
-                            print(f"URL {url} passed Virus Total scan as Safe to visit!")
-                            await addingHashedData(hashedUrl, "URLs", False)
-                            if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                await message.reply(f"URL {url} is safe to visit", suppress_embeds=True)
+                            UrlScanResult = int(UrlScanResult.split(":")[1])
+                            if UrlScanResult > 0:
+                                logMessage += f"URL SCAN SUMMARY: VirusTotal flagged as malicious\n"
+                                print(f"URL {url} flagged malicious by Virus Total")
+                                await addingHashedData(hashedUrl, "URLs", True)
+                                await message.channel.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
+                                await message.delete()
+                            else:
+                                logMessage += f"URL SCAN SUMMARY: VirusTotal scanned as Clean/Safe To Visit\n"
+                                print(f"URL {url} passed Virus Total scan as Safe to visit!")
+                                await addingHashedData(hashedUrl, "URLs", False)
+                                if not isSilent:
+                                    await message.reply(f"URL {url} is safe to visit", suppress_embeds=True)
                     if CURRENTSCANOPERATION.get(hashedUrl, ""):
                         del CURRENTSCANOPERATION[hashedUrl]
                 print(f"URLs scan finished!\n\n")
 
-            if len(message.attachments) > 0:  # Check if the message has at least 1 file attachment and Automation Mode is Enable!
-                print(f"User {message.author.name} uploads {len(message.attachments)} file attachment(s)!")
+            if not isEdit:
+                if not manualScan:
+                    if len(message.attachments) > 0:  # Check if the message has at least 1 file attachment and adding the attachment URL to the attachment scan list
+                        print(f"User {message.author.name} uploads {len(message.attachments)} file attachment(s)!")
+                        for attachment in message.attachments:
+                            fileAttachmentUrls[attachment.url] = attachment.filename
+                else:
+                    fileAttachmentUrls[manualFileAttachment.url] = manualFileAttachment.filename
 
-                for attachment in message.attachments:
-                    print(f"Scanning file {attachment.filename}...")
-                    if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                        await message.reply(f"Cyberbot is scanning the file {attachment.filename} in this message, please do not download until Cyberbot scan is clear of malware.")
-                    logMessage += f"FILE ATTACHMENT: {attachment.filename}\n"
+            for attachmentUrl in fileAttachmentUrls:
+                RootFileName = fileAttachmentUrls[attachmentUrl]
+                print(f"Scanning file {RootFileName}...")
+                if not isSilent:
+                    await message.reply(f"Cyberbot is scanning the file {RootFileName} in this message, please do not download until Cyberbot scan is clear of malware.")
+                logMessage += f"FILE ATTACHMENT: {RootFileName}\n"
 
-                    """Checking ../ attack in file name scheme"""
-                    if "../" in attachment.filename:
-                        logMessage += f"FILE SCAN SUMMARY: File name hinted potential directory transversal attack!\n"
-                        print(f"File name {attachment.filename} hinted potential directory transversal attack!")
-                        await message.reply(f"The file {attachment.filename} name hinted potential directory transversal attack, also known as ../ attack!")
+                """Checking ../ attack in file name scheme"""
+                if "../" in RootFileName:
+                    logMessage += f"FILE SCAN SUMMARY: File name hinted potential directory transversal attack!\n"
+                    print(f"File name {RootFileName} hinted potential directory transversal attack!")
+                    if not manualScan:
+                        await message.reply(f"The file {RootFileName} name hinted potential directory transversal attack, also known as ../ attack!")
                         await message.delete()
-                        print("Scan Process Finish!\n\n")
-                        await logScanSession(f"{logMessage}\n\n")
-                        return
+                    else:
+                        await message.followup.send(f"The file {RootFileName} name hinted potential directory transversal attack, also known as ../ attack!")
+                    print("Scan Process Finish!\n\n")
+                    await logScanSession(f"{logMessage}\n\n")
+                    return
 
-                    filePath = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}"
-                    scanOperation = False
+                filePath = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}"
+                scanOperation = False
 
-                    """Checking if file size within the supported file size for scan"""
-                    async with Cyberbot.session.head(attachment.url) as head:
-                        FullContentLength = int(head.headers.get("Content-Length", 0))
-                    logMessage += f"FILE SIZE: {FullContentLength} bytes\n"
-                    if FullContentLength > 300000000:
-                        logMessage += f"FILE SCAN SUMMARY: File attachment has a total size of {FullContentLength} bytes. Size exceeding Cyberbot file size limit of 300 MB\n"
+                """Checking if file size within the supported file size for scan"""
+                async with Cyberbot.session.head(attachmentUrl) as head:
+                    FullContentLength = int(head.headers.get("Content-Length", 0))
+                logMessage += f"FILE SIZE: {FullContentLength} bytes\n"
+                if FullContentLength > 300000000:
+                    logMessage += f"FILE SCAN SUMMARY: File attachment has a total size of {FullContentLength} bytes. Size exceeding Cyberbot file size limit of 300 MB\n"
+                    if not manualScan:
                         await message.reply(
-                            f"The file {attachment.filename} has a size {FullContentLength} bytes, which"
+                            f"The file {RootFileName} has a size {FullContentLength} bytes, which"
                             f" exceeding the file size limit that Cyberbot can support! The content won't be"
                             f" scanned!")
-                        await logScanSession(f"{logMessage}\n\n")
                     else:
-                        async with Cyberbot.session.get(attachment.url, headers=MAINHEADERS) as response:
-                            if not response.status in range(400, 500):
-                                RootFileHashed = hashlib.sha256(await response.read()).hexdigest()
-                                logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
+                        await message.followup.send(
+                            f"The file {RootFileName} has a size {FullContentLength} bytes, which"
+                            f" exceeding the file size limit that Cyberbot can support! The content won't be"
+                            f" scanned!")
+                else:
+                    async with Cyberbot.session.get(attachmentUrl, headers=MAINHEADERS) as response:
+                        RootFileHashed = hashlib.sha256(await response.read()).hexdigest()
+                        logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
 
-                                """Checking file true extension"""
-                                RootFileTrueExt = await checkingRealFileExtension(await response.read(), attachment.filename)
-                                logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
+                        """Checking file true extension"""
+                        RootFileTrueExt = await checkingRealFileExtension(await response.read(), RootFileName)
+                        logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
+                        sendingMessage += f"The file {RootFileName} extension is: {RootFileTrueExt}\n"
 
-                                if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                    await message.reply(f"The file {attachment.filename} extension is: {RootFileTrueExt}")
-                                filePath = f"{filePath}{RootFileTrueExt}"
+                        if not isSilent:
+                            await message.reply(f"The file {RootFileName} extension is: {RootFileTrueExt}")
+                        filePath = f"{filePath}{RootFileTrueExt}"
 
-                                """Checking if there is another subroutine scanning the same file"""
-                                if CURRENTSCANOPERATION.get(RootFileHashed, "") == "In Progress":
-                                    print(f"File {attachment.filename} is currently being scanned by other subroutine!")
-                                    if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                        await message.reply(f"A scan process for this file is under progressed...")
-                                    while True:
-                                        await asyncio.sleep(0)
-                                        if not CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                            break
-                                else:
-                                    CURRENTSCANOPERATION[RootFileHashed] = "In Progress"
+                        """Checking if there is another subroutine scanning the same file"""
+                        if CURRENTSCANOPERATION.get(RootFileHashed, "") == "In Progress":
+                            print(f"File {RootFileName} is currently being scanned by other subroutine!")
+                            if not isSilent:
+                                await message.reply(f"Another scan process for this file is under progressed...")
+                            while True:
+                                await asyncio.sleep(0)
+                                if not CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                    break
+                        else:
+                            CURRENTSCANOPERATION[RootFileHashed] = "In Progress"
 
-                                """Checking if file hashed signature already in clean or malicious data set"""
-                                if await checkingCleanData(RootFileHashed, "All Extension"):
-                                    logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
-                                    print(f"File {attachment.filename} has already been checked and recorded in the clean data set!\n\n")
-                                    if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                        await message.reply(f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
-                                elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
-                                    logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
-                                    print(f"File {attachment.filename} has already been checked and recorded in the malicious file set!\n\n")
-                                    await message.reply(f"File {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
-                                    await message.delete()
-                                    print(f"Scan Process Finish!\n\n")
-                                    if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                        del CURRENTSCANOPERATION[RootFileHashed]
-                                    await logScanSession(f"{logMessage}\n\n")
-                                    return
-                                else:
-
-                                    """Checking if file is encrypted"""
-                                    if RootFileTrueExt.endswith(ENCRYPTEDFILEFORMATS):
-                                        logMessage += "FILE SCAN SUMMARY: File attachment is encrypted. Cyberbot can not scan\n"
-                                        print("File is encrypted, can not open without the key!")
-                                        await message.reply(
-                                            f"The file {attachment.filename} is an encrypted file that may"
-                                            f" contain confidential or malware information, it is encrypted,"
-                                            f" so Cyberbot can not scan for the content. If you're intend to share the "
-                                            f"encrypted file for sharing legitimate information with someone, please do "
-                                            f"it via DM with the wanted party. If you received the file from someone"
-                                            f" that you do not know, I advice not to download the file and decrypt it!"
-                                            f" If you have the key, you can decrypt the file but do not open it and send"
-                                            f" again for Cyberbot to scan!")
-                                    else:
-                                        if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
-                                            print("Downloading attachment content...")
-                                            async with aiofiles.open(filePath, "wb") as file:
-                                                await file.write(await response.read())
-                                            print("Attachment file downloaded!")
-                                            mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
-                                            os.mkdir(mountPoint)
-                                            print(f"Mount point {mountPoint} created!")
-                                            scanOperation = True
-                                            FILEDOWNLOADCOUNTER += 1
-                                        else:
-                                            logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
-                                            print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
-                                            await message.reply(f"The file {attachment.filename} extension is outside of Cyberbot scope of file formats for malware analysis!")
-                            else:
-                                logMessage += "FILE SCAN SUMMARY: File attachment can not be downloaded by Cyberbot for malware analysis!\n"
-                                print(f"Cyberbot can not retrieve the attachment for scan!")
-                                await message.reply(f"Cyberbot can not retrieve {attachment.filename}!")
+                        """Checking if file hashed signature already in clean or malicious data set"""
+                        if await checkingCleanData(RootFileHashed, "All Extension"):
+                            logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
+                            print(f"File {RootFileName} has already been checked and recorded in the clean data set!\n\n")
+                            if not isSilent:
+                                await message.reply(f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
+                            sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
+                        elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
+                            logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
+                            sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!\n"
+                            print(f"File {RootFileName} has already been checked and recorded in the malicious file set!")
+                            if not manualScan:
+                                await message.reply(f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
                                 await message.delete()
-
-                        if scanOperation:
-                            print(f"Start scanning {attachment.filename} contents with Virus Total...")
-                            virusTotalResult = await virusTotalFileScan(filePath)
-                            if virusTotalResult != "File can't be scanned":
-                                virusTotalResult = virusTotalResult.split(":")
-                                virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                                if int(virusTotalResult[0]) > 0:
-                                    logMessage += "FILE SCAN SUMMARY: File attachment flagged as Malicious by VirusTotal\n"
-                                    print(f"Virus Total analyzed file {attachment.filename} as malicious!")
-                                    await message.reply(f"The file {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
-                                    await message.delete()
-                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                    os.remove(filePath)
-                                    print("Cleaning up process...")
-                                    shutil.rmtree(mountPoint)
-                                    print(f"Scan Process Finish!\n\n")
-                                    if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                        del CURRENTSCANOPERATION[RootFileHashed]
-                                    await logScanSession(f"{logMessage}\n\n")
-                                    return
-                                logMessage += "VIRUS TOTAL SCAN: Safe To Download"
                             else:
-                                logMessage += "VIRUS TOTAL SCAN: Error\n"
-                                print(f"VirusTotal can not scan the attachment!")
+                                await message.followup.send(sendingMessage)
+                            print(f"Scan Process Finish!\n\n")
+                            if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                del CURRENTSCANOPERATION[RootFileHashed]
+                            await logScanSession(f"{logMessage}\n\n")
+                            return
+                        else:
 
-                            if RootFileTrueExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
-                                print("Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
-                                FileUncompressedSize = await asyncio.to_thread(
-                                    ArchivesDiskImagesBombAnalysisAndExtraction, [filePath], mountPoint)
-                                if FileUncompressedSize.startswith(
-                                        ("Encrypted Error", "Path Transversal Attack", "Potential Archive Bomb!",
-                                         "Disk Image Error!", "Potential Recursive Archive Bomb Attack!",
-                                         "Too many duplicated files!")):
-                                    if FileUncompressedSize.startswith("Encrypted Error"):
-                                        logMessage += f"FILE SCAN SUMMARY: File Attachment is an encrypted archive/disk file. Cyberbot can not scan encrypted content\n"
-                                        print(f"Archive/Disk file encrypted!")
+                            """Checking if file is encrypted"""
+                            if RootFileTrueExt.endswith(ENCRYPTEDFILEFORMATS):
+                                logMessage += "FILE SCAN SUMMARY: File attachment is encrypted. Cyberbot can not scan\n"
+                                print("File is encrypted, can not open without the key!")
+                                sendingMessage += f"The file {RootFileName} is an encrypted file that may contain confidential or malware information, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advice not to download the file and decrypt it! If you have the key, you can decrypt the file but do not open it and send again for Cyberbot to scan!\n"
+                                if not manualScan:
+                                    await message.reply(
+                                        f"The file {RootFileName} is an encrypted file that may"
+                                        f" contain confidential or malware information, it is encrypted,"
+                                        f" so Cyberbot can not scan for the content. If you're intend to share the "
+                                        f"encrypted file for sharing legitimate information with someone, please do "
+                                        f"it via DM with the wanted party. If you received the file from someone"
+                                        f" that you do not know, I advice not to download the file and decrypt it!"
+                                        f" If you have the key, you can decrypt the file but do not open it and send"
+                                        f" again for Cyberbot to scan!")
+                            else:
+                                if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
+                                    print("Downloading attachment content...")
+                                    async with aiofiles.open(filePath, "wb") as file:
+                                        await file.write(await response.read())
+                                    print("Attachment file downloaded!")
+                                    mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
+                                    os.mkdir(mountPoint)
+                                    print(f"Mount point {mountPoint} created!")
+                                    scanOperation = True
+                                    FILEDOWNLOADCOUNTER += 1
+                                else:
+                                    logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
+                                    sendingMessage += f"The file {RootFileName} extension is outside of Cyberbot scope of file formats for malware analysis!\n"
+                                    print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
+                                    if not manualScan:
+                                        await message.reply(f"The file {RootFileName} extension is outside of Cyberbot scope of file formats for malware analysis!")
+
+                    if scanOperation:
+                        print(f"Start scanning {RootFileName} contents with Virus Total...")
+                        virusTotalResult = await virusTotalFileScan(filePath)
+                        if virusTotalResult == "File scan too long!":
+                            logMessage += "VIRUS TOTAL SCAN: File scan took too long!\n"
+                        elif virusTotalResult == "File can't be scanned!":
+                            logMessage += "VIRUS TOTAL SCAN: Error retrieving analysis ID\n"
+                        else:
+                            virusTotalResult = virusTotalResult.split(":")
+                            virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
+                            if int(virusTotalResult[0]) > 0:
+                                logMessage += "FILE SCAN SUMMARY: File attachment flagged as Malicious by VirusTotal\n"
+                                sendingMessage += f"The file {RootFileName} was flagged malicious by Virus Total!\n{virusTotalReport}\n"
+                                print(f"Virus Total analyzed file {RootFileName} as malicious!")
+                                if not manualScan:
+                                    await message.reply(f"The file {RootFileName} was flagged malicious by Virus Total!\n{virusTotalReport}")
+                                    await message.delete()
+                                else:
+                                    await message.followup.send(sendingMessage)
+                                await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                os.remove(filePath)
+                                print("Cleaning up process...")
+                                shutil.rmtree(mountPoint)
+                                print(f"Scan Process Finish!\n\n")
+                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                    del CURRENTSCANOPERATION[RootFileHashed]
+                                await logScanSession(f"{logMessage}\n\n")
+                                return
+                            logMessage += "VIRUS TOTAL SCAN: Safe To Download\n"
+
+                        if RootFileTrueExt.endswith(DISKIMAGEANDARCHIVEFORMATS):
+                            print("Attachment is an Archive or Disk Image file, checking for Archive/Disk Image Bomb...")
+                            FileUncompressedSize = await asyncio.to_thread(ArchivesDiskImagesBombAnalysisAndExtraction,[filePath], mountPoint)
+                            if FileUncompressedSize.startswith(("Encrypted Error", "Path Transversal Attack", "Potential Archive Bomb!", "Disk Image Error!", "Potential Recursive Archive Bomb Attack!", "Too many duplicated files!")):
+                                if FileUncompressedSize.startswith("Encrypted Error"):
+                                    logMessage += f"FILE SCAN SUMMARY: File Attachment is an encrypted archive/disk file. Cyberbot can not scan encrypted content\n"
+                                    sendingMessage += f"The archive/disk file {RootFileName} contains an encrypted file that may contain confidential or malware, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advise not to download the file and decrypt it!\n"
+                                    print(f"Archive/Disk file encrypted!")
+                                    if not manualScan:
                                         await message.reply(
-                                            f"The archive/disk file {attachment.filename} contains an encrypted file"
+                                            f"The archive/disk file {RootFileName} contains an encrypted file"
                                             f" that may contain confidential or malware, it is encrypted, so Cyberbot can not scan"
                                             f" for the content. If you're intend to share the encrypted file for sharing legitimate"
                                             f" information with someone, please do it via DM with the wanted party. If you received"
                                             f" the file from someone that you do not know, I advise not to download the file and"
                                             f" decrypt it!"
                                         )
-                                    elif FileUncompressedSize.startswith("Path Transversal Attack"):
-                                        logMessage += f"FILE SCAN SUMMARY: File Attachment contains an uncompressed content with potential path transversal attack scheme\n"
-                                        print(f"Archive/Disk file detected potential path transversal attack!")
+                                elif FileUncompressedSize.startswith("Path Transversal Attack"):
+                                    logMessage += f"FILE SCAN SUMMARY: File Attachment contains an uncompressed content with potential path transversal attack scheme\n"
+                                    sendingMessage += f"The file {RootFileName} contains a file content with file name that can cause a path transversal attack!\n"
+                                    print(f"Archive/Disk file detected potential path transversal attack!")
+                                    if not manualScan:
                                         await message.reply(
-                                            f"The file {attachment.filename} contains a file content with file name that"
+                                            f"The file {RootFileName} contains a file content with file name that"
                                             f" can cause a path transversal attack! The archive file was deleted!"
                                         )
-                                    elif FileUncompressedSize.startswith("Potential Archive Bomb!"):
-                                        logMessage += f"FILE SCAN SUMMARY: File Attachment uncompressed size exceeding 32 GB. Potential archive/disk bomb\n"
-                                        print(f"Archive/Disk file uncompressed size exceeding 32 GB!")
+                                elif FileUncompressedSize.startswith("Potential Archive Bomb!"):
+                                    logMessage += f"FILE SCAN SUMMARY: File Attachment uncompressed size exceeding 32 GB. Potential archive/disk bomb\n"
+                                    sendingMessage += f"The file {RootFileName} has an uncompressed size exceeding 32 GB, potential archive/diskImage bomb detected!\n"
+                                    print(f"Archive/Disk file uncompressed size exceeding 32 GB!")
+                                    if not manualScan:
                                         await message.reply(
-                                            f"The file {attachment.filename} has an uncompressed size exceeding 32 GB,"
+                                            f"The file {RootFileName} has an uncompressed size exceeding 32 GB,"
                                             f" potential archive/diskImage bomb detected!"
                                         )
-                                    elif FileUncompressedSize.startswith("Disk Image Error!"):
-                                        logMessage += f"FILE SCAN SUMMARY: File Attachment has a corrupted disk image\n"
-                                        print(f"Archive/Disk file has corrupted disk image")
-                                        await message.reply(f"The file {attachment.filename} has a corrupted disk image!")
-                                    elif FileUncompressedSize.startswith("Potential Recursive Archive Bomb Attack!"):
-                                        logMessage += f"FILE SCAN SUMMARY: File Attachment has more than 3 duplicated archive/disk files. Potential recursive archive/disk bomb attack\n"
-                                        print(f"Archive/Disk file has more than 3 duplicated archive/disk files")
+                                elif FileUncompressedSize.startswith("Disk Image Error!"):
+                                    logMessage += f"FILE SCAN SUMMARY: File Attachment has a corrupted disk image\n"
+                                    sendingMessage += f"The file {RootFileName} has a corrupted disk image!\n"
+                                    print(f"Archive/Disk file has corrupted disk image")
+                                    if not manualScan:
+                                        await message.reply(f"The file {RootFileName} has a corrupted disk image!")
+                                elif FileUncompressedSize.startswith("Potential Recursive Archive Bomb Attack!"):
+                                    logMessage += f"FILE SCAN SUMMARY: File Attachment has more than 3 duplicated archive/disk files. Potential recursive archive/disk bomb attack\n"
+                                    sendingMessage += f"The file {RootFileName} has more than 3 duplicated archive/disk files within it compressed content! This could be a hint for a potential Recursive Archive/Disk Bomb Attack!\n"
+                                    print(f"Archive/Disk file has more than 3 duplicated archive/disk files")
+                                    if not manualScan:
                                         await message.reply(
-                                            f"The file {attachment.filename} has more than 3 duplicated archive/disk files within it "
+                                            f"The file {RootFileName} has more than 3 duplicated archive/disk files within it "
                                             f"compressed content! This could be a hint for a potential Recursive Archive/Disk Bomb Attack!"
                                         )
-                                    else:
-                                        logMessage += f"FILE SCAN SUMMARY: File Attachment is an archive/disk image with too many duplicated content. A hint for a potential Archive/Disk Bomb Attack Method that extract many duplicated content to fill up storage space!\n"
-                                        print(f"Archive/Disk file has too many duplicated contents")
+                                else:
+                                    logMessage += f"FILE SCAN SUMMARY: File Attachment is an archive/disk image with too many duplicated content. A hint for a potential Archive/Disk Bomb Attack Method that extract many duplicated content to fill up storage space!\n"
+                                    sendingMessage += f"The file {RootFileName} has too many duplicated files within it compressed content! This is a hint for a potential Archive/Disk Bomb Attack Method that extract many duplicated content to fill up storage space!\n"
+                                    print(f"Archive/Disk file has too many duplicated contents")
+                                    if not manualScan:
                                         await message.reply(
-                                            f"The file {attachment.filename} has too many duplicated files within it "
+                                            f"The file {RootFileName} has too many duplicated files within it "
                                             f"compressed content! This is a hint for a potential Archive/Disk Bomb Attack Method that"
                                             f" extract many duplicated content to fill up storage space!"
                                         )
-
-                                    if not FileUncompressedSize.startswith("Encrypted Error"):
-                                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                if not FileUncompressedSize.startswith("Encrypted Error"):
+                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                    if not manualScan:
                                         await message.delete()
-                                    print("Cleaning up process...")
-                                    shutil.rmtree(mountPoint)
-                                    print(f"Scan Process Finish!\n\n")
-                                    if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                        del CURRENTSCANOPERATION[RootFileHashed]
-                                    await logScanSession(f"{logMessage}\n\n")
-                                    return
+                                if manualScan:
+                                    await message.followup.send(sendingMessage)
+                                print("Cleaning up process...")
+                                shutil.rmtree(mountPoint)
+                                print(f"Scan Process Finish!\n\n")
+                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                    del CURRENTSCANOPERATION[RootFileHashed]
+                                await logScanSession(f"{logMessage}\n\n")
+                                return
 
-                                ufs = uncompressedFileStructure(mountPoint, indent="")
+                            ufs = uncompressedFileStructure(mountPoint, indent="")
 
-                                logMessage += f"FILE UNCOMPRESSION SUMMARY: The file uncompressed size {FileUncompressedSize.split('|')[0]} bytes and {FileUncompressedSize.split('|')[1]} duplicated content.\nUNCOMPRESSED FILE STRUCTURE:\n{ufs}\n"
-                                if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                    await message.reply(
-                                        f"The file {attachment.filename} has an uncompressed size of"
-                                        f" {FileUncompressedSize.split('|')[0]} bytes, which below the standard "
-                                        f"threshold uncompressed size of 32 GB to be flagged as archive/diskImage "
-                                        f"bomb!\nBegin the scanning process on the uncompressed content"
-                                        f", which may take quite some time. There are {FileUncompressedSize.split('|')[1]}"
-                                        f" duplicated content to be aware of!")
-                                    await message.reply(f"The Uncompressed File Structure of {attachment.filename} are:\n{ufs}")
+                            logMessage += f"FILE UNCOMPRESSION SUMMARY: The file uncompressed size {FileUncompressedSize.split('|')[0]} bytes and {FileUncompressedSize.split('|')[1]} duplicated content.\nUNCOMPRESSED FILE STRUCTURE:\n{ufs}\n"
+                            sendingMessage += f"The file {RootFileName} has an uncompressed size of {FileUncompressedSize.split('|')[0]} bytes, which below the standard threshold uncompressed size of 32 GB to be flagged as archive/diskImage bomb!\nBegin the scanning process on the uncompressed content, which may take quite some time. There are {FileUncompressedSize.split('|')[1]} duplicated content to be aware of!\nThe Uncompressed File Structure of {RootFileName} are:\n{ufs}\n"
+                            if not isSilent:
+                                await message.reply(
+                                    f"The file {RootFileName} has an uncompressed size of"
+                                    f" {FileUncompressedSize.split('|')[0]} bytes, which below the standard "
+                                    f"threshold uncompressed size of 32 GB to be flagged as archive/diskImage "
+                                    f"bomb!\nBegin the scanning process on the uncompressed content"
+                                    f", which may take quite some time. There are {FileUncompressedSize.split('|')[1]}"
+                                    f" duplicated content to be aware of!")
+                                await message.reply(f"The Uncompressed File Structure of {RootFileName} are:\n{ufs}")
 
-                                print(f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
-                                for dirpath, _, filenames in os.walk(mountPoint):
-                                    for filename in filenames:
-                                        logMessage += f"UNCOMPRESSED FILE INSIDE ARCHIVE {attachment.filename}: {filename}\n"
-                                        filepath = os.path.join(dirpath, filename)
-                                        fileSize = os.path.getsize(filepath)
-                                        async with aiofiles.open(filepath, mode="rb") as source:
-                                            fileExt = await checkingRealFileExtension(await source.read(), filename)
-                                            HashedFileData = hashlib.sha256(await source.read()).hexdigest()
-                                        print(f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                                        logMessage += f"SHA-256 HASH: {HashedFileData}\nFILE SIZE: {fileSize} bytes\nFILE EXT: {fileExt}\n"
+                            print(f"Start scanning for the extracted file contents at {mountPoint} with Virus Total...")
+                            for dirpath, _, filenames in os.walk(mountPoint):
+                                for filename in filenames:
+                                    logMessage += f"UNCOMPRESSED FILE INSIDE ARCHIVE {RootFileName}: {filename}\n"
+                                    filepath = os.path.join(dirpath, filename)
+                                    fileSize = os.path.getsize(filepath)
+                                    async with aiofiles.open(filepath, mode="rb") as source:
+                                        fileExt = await checkingRealFileExtension(await source.read(), filename)
+                                        HashedFileData = hashlib.sha256(await source.read()).hexdigest()
+                                    print( f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                    logMessage += f"SHA-256 HASH: {HashedFileData}\nFILE SIZE: {fileSize} bytes\nFILE EXT: {fileExt}\n"
 
-                                        if await checkingCleanData(HashedFileData, "All Extension"):
-                                            print(f"File {filename} has already been checked and recorded in the clean data set!\n")
-                                            logMessage += "FILE SCAN SUMMARY: File already scanned as Safe To Download\n"
-                                            if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                                await message.reply(f"File {filename} inside archive/disk image {attachment.filename} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
-                                            os.remove(filepath)
-                                        elif await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
-                                            logMessage += "FILE SCAN SUMMARY: File already flagged Malicious\n"
-                                            print(f"File {filename} has already been checked and recorded in the malicious file set!")
-                                            await message.reply(f"File {filename} inside {attachment.filename} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
+                                    if await checkingCleanData(HashedFileData, "All Extension"):
+                                        print(f"File {filename} has already been checked and recorded in the clean data set!\n")
+                                        logMessage += "FILE SCAN SUMMARY: File already scanned as Safe To Download\n"
+                                        sendingMessage += f"File {filename} inside archive/disk image {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
+                                        if not isSilent:
+                                            await message.reply(f"File {filename} inside archive/disk image {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
+                                        os.remove(filepath)
+                                    elif await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
+                                        logMessage += "FILE SCAN SUMMARY: File already flagged Malicious\n"
+                                        sendingMessage += f"File {filename} inside {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!\n"
+                                        print(f"File {filename} has already been checked and recorded in the malicious file set!")
+                                        if not manualScan:
+                                            await message.reply(f"File {filename} inside {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
                                             await message.delete()
-                                            await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                            print("Cleaning up process...")
-                                            shutil.rmtree(mountPoint)
-                                            print(f"Scan Process Finish!\n\n")
-                                            if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                                del CURRENTSCANOPERATION[RootFileHashed]
-                                            await logScanSession(f"{logMessage}\n\n")
-                                            return
                                         else:
-                                            print(f"Start Virus Total Scan on {filename}...")
-                                            virusTotalResult = await virusTotalFileScan(filePath)
-                                            if virusTotalResult != "File can't be scanned":
-                                                virusTotalResult = virusTotalResult.split(":")
-                                                virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                                                if int(virusTotalResult[0]) > 0:
-                                                    logMessage += "FILE SCAN SUMMARY: VirusTotal flagged as Malicious\n"
-                                                    print(f"Virus Total analyzed file {filename} as malicious!")
-                                                    await message.reply(f"File {filename} inside archive/disk image {attachment.filename} was flagged malicious by Virus Total!\n{virusTotalReport}")
+                                            await message.followup.send(sendingMessage)
+                                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                        print("Cleaning up process...")
+                                        shutil.rmtree(mountPoint)
+                                        print(f"Scan Process Finish!\n\n")
+                                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                            del CURRENTSCANOPERATION[RootFileHashed]
+                                        await logScanSession(f"{logMessage}\n\n")
+                                        return
+                                    else:
+                                        print(f"Start Virus Total Scan on {filename}...")
+                                        virusTotalResult = await virusTotalFileScan(filepath)
+                                        if virusTotalResult == "File scan too long!":
+                                            logMessage += "VIRUS TOTAL SCAN: File scan took too long!\n"
+                                        elif virusTotalResult == "File can't be scanned!":
+                                            logMessage += "VIRUS TOTAL SCAN: Error retrieving analysis ID\n"
+                                        else:
+                                            virusTotalResult = virusTotalResult.split(":")
+                                            virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
+                                            if int(virusTotalResult[0]) > 0:
+                                                logMessage += "FILE SCAN SUMMARY: VirusTotal flagged as Malicious\n"
+                                                print(f"Virus Total analyzed file {filename} as malicious!")
+                                                sendingMessage += f"File {filename} inside archive/disk image {RootFileName} was flagged malicious by Virus Total!\n{virusTotalReport}\n"
+                                                if not manualScan:
+                                                    await message.reply(f"File {filename} inside archive/disk image {RootFileName} was flagged malicious by Virus Total!\n{virusTotalReport}")
                                                     await message.delete()
-                                                    await addingHashedData(HashedFileData, fileExt, True)
-                                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                                    print("Cleaning up process...")
-                                                    shutil.rmtree(mountPoint)
-                                                    print(f"Scan Process Finish!\n\n")
-                                                    if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                                        del CURRENTSCANOPERATION[RootFileHashed]
-                                                    await logScanSession(f"{logMessage}\n\n")
-                                                    return
-                                            logMessage += "VIRUS TOTAL SCAN: Safe To Download"
-                                            if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(EXECUTABLEFORMATS):
-                                                await addingHashedData(HashedFileData, fileExt, False)
-                                                os.remove(filepath)
-                            else:
-                                shutil.move(filePath, mountPoint)
-                                print(f"Content has been moved to main scan directory {mountPoint}")
-
-                            CompiledHashedMap = {}
-                            print(f"Start scanning for COMPILED/EXECUTABLE file contents ONLY at {mountPoint}...")
-                            for dirpath, _, filenames in os.walk(mountPoint):
-                                for filename in filenames:
-                                    filepath = os.path.join(dirpath, filename)
-                                    fileSize = os.path.getsize(filepath)
-                                    async with aiofiles.open(filepath, "rb") as source:
-                                        fileExt = await checkingRealFileExtension(await source.read(), filename)
-                                        HashedCompiledFileData = hashlib.sha256(await source.read()).hexdigest()
-
-                                    if fileExt in EXECUTABLEFORMATS:
-                                        print(f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                                        outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint, filename)
-                                        if outputFilePath != "ERROR":
-                                            async with aiofiles.open(outputFilePath, "rb") as file:
-                                                HashedDecompiledData = hashlib.sha256(await file.read()).hexdigest()
-                                            CompiledHashedMap[HashedCompiledFileData] = HashedDecompiledData
-
-                            print(f"Start scanning for SCRIPT file contents ONLY at {mountPoint}...")
-                            for dirpath, _, filenames in os.walk(mountPoint):
-                                for filename in filenames:
-                                    filepath = os.path.join(dirpath, filename)
-                                    fileSize = os.path.getsize(filepath)
-                                    async with aiofiles.open(filepath, "rb") as source:
-                                        fileExt = await checkingRealFileExtension(await source.read(), filename)
-                                        HashedScriptFileData = hashlib.sha256(await source.read()).hexdigest()
-
-                                    """SCAT Process with OpenAI and Gemini LLMs"""
-                                    if fileExt in SCRIPTFILEFORMATS:
-                                        print(f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
-                                        print(f"Converting script file {filename} to PDF...")
-                                        pdf = FPDF()
-                                        pdf.add_page()
-                                        pdf.set_font("Arial", size=12)
-                                        pdfpath = f"{filepath.split(".")[0]}.pdf"
-                                        async with aiofiles.open(filepath, "r", encoding="utf-8") as SourceCodefile:
-                                            pdf.multi_cell(0, 10, (await SourceCodefile.read()).encode("latin-1", errors="replace").decode("latin-1"))
-                                            pdf.output(pdfpath)
-                                        filepath = pdfpath
-                                        print(f"Conversion successes!")
-                                        flaggedMalicious = False
-                                        if not flaggedMalicious:
-                                            print(f"Start {GPTMODEL} scan on file {filename} for malware analysis...")
-                                            GptScanResult = await openAISCAT(filepath)
-                                            if GptScanResult.startswith(("True", "true")):
-                                                logMessage += f"FILE SCAN SUMMARY: {GPTMODEL} flagged as Malicious\n"
-                                                flaggedMalicious = True
-                                                print(f"{GPTMODEL} analyzed the content of being a potential malware!")
-                                                if len(GptScanResult) > 1500:
-                                                    print(f"Scan result exceeding 1500 words, creating a txt file to send the report...")
-                                                    buffer = BytesIO()
-                                                    buffer.write(GptScanResult.encode('utf-8'))
-                                                    buffer.seek(0)
-                                                    resultFile = discord.File(fp=buffer, filename="GPTScanResult.txt")
-                                                    await message.reply(
-                                                        f"{GPTMODEL} scan result for file {os.path.basename(filepath)} suggested"
-                                                        f" a potential malicious file, therefore it was deleted!",
-                                                        file=resultFile)
                                                 else:
-                                                    await message.reply(
-                                                        f"{GPTMODEL} scan result: {GptScanResult}\n\nThe file"
-                                                        f" {os.path.basename(filepath)} was detected of being a"
-                                                        f" potential malicious file, therefore it was"
-                                                        f" deleted!")
-
-                                        if not flaggedMalicious:
-                                            print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
-                                            GeminiScanResult = await GeminiSCAT(filepath)
-
-                                            if GeminiScanResult.startswith(("True", "true")):
-                                                logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
-                                                flaggedMalicious = True
-                                                print(f"{GEMINIMODEL} analyzed the content of being a potential malware!")
-                                                if len(GeminiScanResult) > 1500:
-                                                    print(f"Scan result exceeding 1500 words, creating a txt file to send the report...")
-                                                    buffer = BytesIO()
-                                                    buffer.write(GeminiScanResult.encode('utf-8'))
-                                                    buffer.seek(0)
-                                                    resultFile = discord.File(fp=buffer, filename="GeminiScanResult.txt")
-                                                    await message.reply(
-                                                        f"{GEMINIMODEL} scan result for file {os.path.basename(filepath)} suggested"
-                                                        f" a potential malicious file, therefore it was deleted!",
-                                                        file=resultFile)
-                                                else:
-                                                    await message.reply(
-                                                        f"{GEMINIMODEL} scan result: {GeminiScanResult}\n\nThe file"
-                                                        f" {os.path.basename(filepath)} was detected of being a"
-                                                        f" potential malicious file, therefore it was deleted!")
-
-                                        if flaggedMalicious:
-                                            if HashedScriptFileData == RootFileHashed:
+                                                    await message.followup.send(sendingMessage)
+                                                await addingHashedData(HashedFileData, fileExt, True)
                                                 await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                            else:
-                                                await addingHashedData(HashedScriptFileData, fileExt, True)
-                                                await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                                for HashedData in CompiledHashedMap:
-                                                    if CompiledHashedMap[
-                                                        HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
-                                                        await addingHashedData(HashedData, ".exe", True)
-                                                        break
-                                            await message.delete()
-                                            print("Cleaning up process...")
-                                            shutil.rmtree(mountPoint)
-                                            print(f"Scan Process Finish!\n\n")
-                                            if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                                del CURRENTSCANOPERATION[RootFileHashed]
-                                            await logScanSession(f"{logMessage}\n\n")
-                                            return
+                                                print("Cleaning up process...")
+                                                shutil.rmtree(mountPoint)
+                                                print(f"Scan Process Finish!\n\n")
+                                                if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                                    del CURRENTSCANOPERATION[RootFileHashed]
+                                                await logScanSession(f"{logMessage}\n\n")
+                                                return
+                                        logMessage += "VIRUS TOTAL SCAN: Safe To Download\n"
+                                        if not fileExt.endswith(SCRIPTFILEFORMATS) and not fileExt.endswith(EXECUTABLEFORMATS):
+                                            await addingHashedData(HashedFileData, fileExt, False)
+                                            os.remove(filepath)
+                        else:
+                            shutil.move(filePath, mountPoint)
+                            print(f"Content has been moved to main scan directory {mountPoint}")
+
+                        CompiledHashedMap = {}
+                        print(f"Start scanning for COMPILED/EXECUTABLE file contents ONLY at {mountPoint}...")
+                        for dirpath, _, filenames in os.walk(mountPoint):
+                            for filename in filenames:
+                                filepath = os.path.join(dirpath, filename)
+                                fileSize = os.path.getsize(filepath)
+                                async with aiofiles.open(filepath, "rb") as source:
+                                    fileExt = await checkingRealFileExtension(await source.read(), filename)
+                                    HashedCompiledFileData = hashlib.sha256(await source.read()).hexdigest()
+
+                                if fileExt in EXECUTABLEFORMATS:
+                                    print(f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                    outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint, filename)
+                                    if outputFilePath != "ERROR":
+                                        async with aiofiles.open(outputFilePath, "rb") as file:
+                                            HashedDecompiledData = hashlib.sha256(await file.read()).hexdigest()
+                                        CompiledHashedMap[HashedCompiledFileData] = HashedDecompiledData
+
+                        print(f"Start scanning for SCRIPT file contents ONLY at {mountPoint}...")
+                        for dirpath, _, filenames in os.walk(mountPoint):
+                            for filename in filenames:
+                                filepath = os.path.join(dirpath, filename)
+                                fileSize = os.path.getsize(filepath)
+                                async with aiofiles.open(filepath, "rb") as source:
+                                    fileExt = await checkingRealFileExtension(await source.read(), filename)
+                                    HashedScriptFileData = hashlib.sha256(await source.read()).hexdigest()
+                                """SCAT Process with OpenAI and Gemini LLMs"""
+                                if fileExt in SCRIPTFILEFORMATS:
+                                    print(f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                    print(f"Converting script file {filename} to PDF...")
+                                    pdf = FPDF()
+                                    pdf.add_page()
+                                    pdf.set_font("Arial", size=12)
+                                    pdfpath = f"{filepath.split(".")[0]}.pdf"
+                                    async with aiofiles.open(filepath, "r", encoding="utf-8") as SourceCodefile:
+                                        pdf.multi_cell(0, 10, (await SourceCodefile.read()).encode("latin-1", errors="replace").decode("latin-1"))
+                                        pdf.output(pdfpath)
+                                    filepath = pdfpath
+                                    print(f"Conversion successes!")
+                                    flaggedMalicious = False
+                                    print(f"Start {GPTMODEL} scan on file {filename} for malware analysis...")
+                                    GptScanResult = await openAISCAT(filepath)
+                                    if GptScanResult.startswith(("True", "true")):
+                                        logMessage += f"FILE SCAN SUMMARY: {GPTMODEL} flagged as Malicious\n"
+                                        sendingMessage += f"{GPTMODEL} scan result:\n{GptScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
+                                        flaggedMalicious = True
+                                        print(f"{GPTMODEL} analyzed the content of being a potential malware!")
+                                        if not manualScan:
+                                            print(f"Creating a txt file to send the report...")
+                                            buffer = BytesIO()
+                                            buffer.write(GptScanResult.encode('utf-8'))
+                                            buffer.seek(0)
+                                            resultFile = discord.File(fp=buffer, filename="GPTScanResult.txt")
+                                            await message.reply(
+                                                f"{GPTMODEL} scan result for file {os.path.basename(filepath)} suggested"
+                                                f" a potential malicious file, therefore it was deleted!",
+                                                file=resultFile)
+                                    if not flaggedMalicious:
+                                        print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
+                                        GeminiScanResult = await GeminiSCAT(filepath)
+                                        if GeminiScanResult.startswith(("True", "true")):
+                                            logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
+                                            sendingMessage += f"{GEMINIMODEL} scan result:\n{GeminiScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
+                                            flaggedMalicious = True
+                                            print(f"{GEMINIMODEL} analyzed the content of being a potential malware!")
+                                            if not manualScan:
+                                                print(f"Creating a txt file to send the report...")
+                                                buffer = BytesIO()
+                                                buffer.write(GeminiScanResult.encode('utf-8'))
+                                                buffer.seek(0)
+                                                resultFile = discord.File(fp=buffer, filename="GeminiScanResult.txt")
+                                                await message.reply(
+                                                    f"{GEMINIMODEL} scan result for file {os.path.basename(filepath)} suggested"
+                                                    f" a potential malicious file, therefore it was deleted!",
+                                                    file=resultFile)
+                                    if flaggedMalicious:
+                                        if HashedScriptFileData == RootFileHashed:
+                                            await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                         else:
-                                            await addingHashedData(HashedScriptFileData, fileExt, False)
+                                            await addingHashedData(HashedScriptFileData, fileExt, True)
+                                            await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                             for HashedData in CompiledHashedMap:
                                                 if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
-                                                    await addingHashedData(HashedData, ".exe", False)
+                                                    await addingHashedData(HashedData, ".exe", True)
                                                     break
-                                            logMessage += f"FILE SCAN SUMMARY: File passed Virus Total, OpenAI and Gemini SCAT."
-                            print("Cleaning up process...")
-                            shutil.rmtree(mountPoint)
-                            await addingHashedData(RootFileHashed, RootFileTrueExt, False)
-                            if not CyberBotConfigData["Silent-Mode"][str(message.guild.id)] == "True":
-                                await message.reply(f"The file {attachment.filename} is safe to download!")
-                            print(f"Scan Process Finish!\n\n")
-                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                            del CURRENTSCANOPERATION[RootFileHashed]
-            await logScanSession(f"{logMessage}\n\n")
-        else:
-            logMessage += f"SCAN SUMMARY: Cyberbot detected the message but automation scan mode is disabled for this server, so no scan is done!\n\n"
-            await logScanSession(logMessage)
+                                        if not manualScan:
+                                            await message.delete()
+                                        else:
+                                            if len(sendingMessage) > 1500:
+                                                buffer = BytesIO()
+                                                buffer.write(sendingMessage.encode('utf-8'))
+                                                buffer.seek(0)
+                                                resultFile = discord.File(fp=buffer, filename="ScanResult.txt")
+                                                await message.followup.send(file=resultFile)
+                                            else:
+                                                await message.followup.send(sendingMessage)
+                                        print("Cleaning up process...")
+                                        shutil.rmtree(mountPoint)
+                                        print(f"Scan Process Finish!\n\n")
+                                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                            del CURRENTSCANOPERATION[RootFileHashed]
+                                        await logScanSession(f"{logMessage}\n\n")
+                                        return
+                                    else:
+                                        await addingHashedData(HashedScriptFileData, fileExt, False)
+                                        for HashedData in CompiledHashedMap:
+                                            if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                                await addingHashedData(HashedData, ".exe", False)
+                                                break
+                                        logMessage += f"FILE SCAN SUMMARY: File passed Virus Total, OpenAI and Gemini SCAT.\n"
+                        print("Cleaning up process...")
+                        shutil.rmtree(mountPoint)
+                        await addingHashedData(RootFileHashed, RootFileTrueExt, False)
+                        if not isSilent:
+                            await message.reply(f"The file {RootFileName} is safe to download!")
+                        sendingMessage += f"The file {RootFileName} is safe to download!\n"
+                        print(f"Scan Process Finish!\n\n")
+                    if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                        del CURRENTSCANOPERATION[RootFileHashed]
+            if not manualScan:
+                if len(sendingMessage) > 1500:
+                    buffer = BytesIO()
+                    buffer.write(sendingMessage.encode('utf-8'))
+                    buffer.seek(0)
+                    resultFile = discord.File(fp=buffer, filename="ScanResult.txt")
+                    await message.followup.send(file=resultFile)
+                else:
+                    await message.followup.send(sendingMessage)
+                await logScanSession(f"{logMessage}\n\n")
+
+
+#  Command can run in any channels
+@Cyberbot.tree.command(
+    name="manual_malware_scan",
+    description="Manually scan the file content you provided with OpenAI, Gemini, and Virus Total"
+)
+@app_commands.describe(
+    file_to_be_scanned="Upload a single file to scan"
+)
+async def manual_malware_scan(ctx, file_to_be_scanned: discord.Attachment):
+    print(f"User {ctx.user.name} initiated Manual Malware Scan for file {file_to_be_scanned.filename}")
+    await ctx.response.defer()
+    await CyberBotScan(ctx, manualScan=True, manualFileAttachment=file_to_be_scanned)
+
+
+@Cyberbot.event
+async def on_message_edit(before: discord.message.Message, after: discord.message.Message):
+    await Cyberbot.process_commands(after)
+    if before.content != after.content:
+        print(f"Re-edit Message detected!")
+        await CyberBotScan(after, True)
+
+
+@Cyberbot.event
+async def on_message(message: discord.message.Message):
+    await Cyberbot.process_commands(message)
+    await CyberBotScan(message)
 
 
 Cyberbot.run(BOTTOKEN)
