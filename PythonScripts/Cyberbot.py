@@ -2921,10 +2921,10 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                         """Checking if file hashed signature already in clean or malicious data set"""
                         if await checkingCleanData(RootFileHashed, "All Extension"):
                             logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
+                            sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
                             print(f"File {RootFileName} has already been checked and recorded in the clean data set!\n\n")
                             if not isSilent:
                                 await message.reply(f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
-                            sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
                         elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
                             logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
                             sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!\n"
@@ -3283,7 +3283,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                         print(f"Scan Process Finish!\n\n")
                     if CURRENTSCANOPERATION.get(RootFileHashed, ""):
                         del CURRENTSCANOPERATION[RootFileHashed]
-            if not manualScan:
+            if manualScan:
                 if len(sendingMessage) > 1500:
                     buffer = BytesIO()
                     buffer.write(sendingMessage.encode('utf-8'))
@@ -3292,7 +3292,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                     await message.followup.send(file=resultFile)
                 else:
                     await message.followup.send(sendingMessage)
-                await logScanSession(f"{logMessage}\n\n")
+            await logScanSession(f"{logMessage}\n\n")
 
 
 #  Command can run in any channels
