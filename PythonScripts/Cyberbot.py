@@ -107,7 +107,7 @@ ENCRYPTEDFILEFORMATS = (".enc", ".aes", ".pgp", ".gpg", ".vault")
 
 EXECUTABLEFORMATS = ("Mach-O executable", "ELF executable", ".exe", ".dll", ".dex", ".jar", ".bin", ".sys", ".dylib")
 
-SCRIPTFILEFORMATS = (".sh", ".zsh", "ASCII document or script files", ".txt", ".c")
+SCRIPTFILEFORMATS = (".sh", ".zsh", "ASCII document or script files", ".txt", ".c", ".java")
 
 DOCUMENTFILEFORMATS = (".pdf", ".docx", ".doc")
 
