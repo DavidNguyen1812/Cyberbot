@@ -356,8 +356,19 @@ def calculateUsageCost(model: str, totalInputTokens: int, totalOutputTokens: int
     :param totalOutputTokens: The total output tokens of a prompt
     :return: The final calculated usage cost
     """
-    totalCost = (totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0] + (totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0]
-    return round(totalCost, 5)
+    if "gemini" in model:
+        if totalInputTokens > 200000:
+            totalInputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][1], 5)
+        else:
+            totalInputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0], 5)
+        if totalOutputTokens > 200000:
+            totalOutputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][1], 5)
+        else:
+            totalOutputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0], 5)
+        return totalInputTokensCost + totalOutputTokensCost
+    else:
+        totalCost = (totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0] + (totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0]
+        return round(totalCost, 5)
 
 
 async def CronTaskLog(logData: str) -> None:
