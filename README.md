@@ -398,6 +398,8 @@ All administrator account passwords must conform to the following requirements:
 
 Passwords are stored as **SHA-512 hashes**, salted using the user's Discord ID to ensure uniqueness and resistance against precomputed attacks.
 
+**Seucrity Note**: Email addresses are stored **Plainly** due to Cyberbot email automation system need the account email to be able to send password expiration notification, user admin access removal, ..etc..
+
 ---
 
 ## Password Reset & Update Procedure
