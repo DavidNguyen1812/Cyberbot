@@ -2,6 +2,8 @@
 
 import os
 import subprocess
+
+import openai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -74,6 +76,7 @@ from aiocsv import AsyncWriter
 from zoneinfo import ZoneInfo
 from urllib.parse import unquote
 from email_validator import validate_email, EmailNotValidError
+from google.genai import types
 
 import json
 import zipfile
@@ -373,9 +376,9 @@ def calculateUsageCost(model: str, totalInputTokens: int, totalOutputTokens: int
         else:
             totalInputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0], 5)
         if totalOutputTokens > 200000:
-            totalOutputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][1], 5)
+            totalOutputTokensCost = round((totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][1], 5)
         else:
-            totalOutputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0], 5)
+            totalOutputTokensCost = round((totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0], 5)
         return totalInputTokensCost + totalOutputTokensCost
     else:
         totalCost = (totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0] + (totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0]
@@ -912,34 +915,55 @@ async def openAISCAT(filepath: str) -> str:
     async with aiofiles.open(filepath, "rb") as PDFfile:
         fileResponse = await GPTclient.files.create(file=(f"{FILEDOWNLOADCOUNTER}.pdf", await PDFfile.read()), purpose="assistants")
         fileID = fileResponse.id
-
     prompt = (f"# ASK:\n"
               f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
               f"# RESPONSE FORMAT:\n"
               f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
     inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}])).input_tokens
-    print(f"Total Input Tokens: {inputPromptTokenCount}")
+    print(f"[Open AI SCAT Model {GPTMODEL}] Total Input Tokens: {inputPromptTokenCount}")
     if inputPromptTokenCount > LLMMODELINFORMATION[GPTMODEL]["Maximum Input Tokens"] or inputPromptTokenCount > LLMMODELINFORMATION[GPTMODEL]["TPM"]:
-        print(f"MAXIMUM TOKEN LIMIT!!")
+        print(f"[Open AI SCAT Model {GPTMODEL}] MAXIMUM TOKEN LIMIT!!")
         await GPTclient.files.delete(fileID)
         async with ScatLogLock:
             async with aiofiles.open(SCATLOG, "a") as logfile:
                 await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
         return "MAXIMUM TOKEN LIMIT"
     else:
-        response = await GPTclient.responses.create(model=GPTMODEL,instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}], store=False)
-        await GPTclient.files.delete(fileID)
-        outputPromptTokenCount = response.usage.total_tokens - inputPromptTokenCount
-        print(f"Total Output Tokens: {outputPromptTokenCount}")
-        cMonth = time.ctime(time.time()).split()[1]
-        cDay = time.ctime(time.time()).split()[2]
-        totalCost = calculateUsageCost(GPTMODEL, inputPromptTokenCount, outputPromptTokenCount)
-        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",[f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], MonthlyCSVLock)
-        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",[f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], YearlyCSVLock)
-        async with ScatLogLock:
-            async with aiofiles.open(SCATLOG, "a") as logfile:
-                await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: {response.output_text}\nTotal Output Tokens: {outputPromptTokenCount}\n\n\n")
-        return response.output_text
+        try:
+            response = await GPTclient.responses.create(model=GPTMODEL,instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}], temperature=0, store=False)
+            await GPTclient.files.delete(fileID)
+            outputPromptTokenCount = response.usage.total_tokens - inputPromptTokenCount
+            print(f"[Open AI SCAT Model {GPTMODEL}] Total Output Tokens: {outputPromptTokenCount}")
+            cMonth = time.ctime(time.time()).split()[1]
+            cDay = time.ctime(time.time()).split()[2]
+            totalCost = calculateUsageCost(GPTMODEL, inputPromptTokenCount, outputPromptTokenCount)
+            await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], MonthlyCSVLock)
+            await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], YearlyCSVLock)
+            async with ScatLogLock:
+                async with aiofiles.open(SCATLOG, "a") as logfile:
+                    await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: {response.output_text}\nTotal Output Tokens: {outputPromptTokenCount}\n\n\n")
+            return response.output_text
+        except openai.RateLimitError as RateLimitError:
+            await GPTclient.files.delete(fileID)
+            print(f"[Open AI SCAT Model {GPTMODEL}] Rate Limit Error {RateLimitError}")
+            async with ScatLogLock:
+                async with aiofiles.open(SCATLOG, "a") as logfile:
+                    await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: {RateLimitError}\n\n\n")
+            return str(RateLimitError)
+        except openai.BadRequestError as BadRequestError:
+            await GPTclient.files.delete(fileID)
+            print(f"[Open AI SCAT Model {GPTMODEL}] Bad Request Error {BadRequestError}")
+            async with ScatLogLock:
+                async with aiofiles.open(SCATLOG, "a") as logfile:
+                    await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: {BadRequestError}\n\n\n")
+            return str(BadRequestError)
+        except openai.APITimeoutError as APITimeoutError:
+            await GPTclient.files.delete(fileID)
+            print(f"[Open AI SCAT Model {GPTMODEL}] API Timeout Error {APITimeoutError}\nAttempting SCAT process again!")
+            async with ScatLogLock:
+                async with aiofiles.open(SCATLOG, "a") as logfile:
+                    await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nOpenAI Assistant {GPTMODEL} Scan Result: {APITimeoutError}\n\n\n")
+            return await openAISCAT(filepath)
 
 
 async def GeminiSCAT(filepath: str):
@@ -949,7 +973,7 @@ async def GeminiSCAT(filepath: str):
     :return: The analysis results from Gemini
     """
     uploadedFile = await GeminiClient.aio.files.upload(file=filepath)
-    print(f"Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
+    print(f"[Gemini SCAT Model {GEMINIMODEL}] Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
     mainPrompt = (f"# ROLE:\n"
                   f"You are a cybersecurity analyst on a file for potential malware detection\n"
                   f"# ASK:\n"
@@ -960,22 +984,22 @@ async def GeminiSCAT(filepath: str):
     try:
         totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
     except Exception as error:
-        print(f"Received error: {error}\nAttempting upload original source file")
+        print(f"[Gemini SCAT Model {GEMINIMODEL}] Received error: {error}\nAttempting upload original source file")
         uploadedFile = await GeminiClient.aio.files.upload(file=filepath.replace(".pdf", ".txt"))
-        print(f"Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
+        print(f"[Gemini SCAT Model {GEMINIMODEL}] Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
         prompts = [uploadedFile, mainPrompt]
         totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
-    print(f"Total Input Tokens: {totalInputTokenCount}")
+    print(f"[Gemini SCAT Model {GEMINIMODEL}] Total Input Tokens: {totalInputTokenCount}")
     if totalInputTokenCount > LLMMODELINFORMATION[GEMINIMODEL]["Maximum Input Tokens"] or totalInputTokenCount > LLMMODELINFORMATION[GEMINIMODEL]["TPM"]:
-        print(f"MAXIMUM TOKEN LIMIT!!")
+        print(f"[Gemini SCAT Model {GEMINIMODEL}] MAXIMUM TOKEN LIMIT!!")
         async with ScatLogLock:
             async with aiofiles.open(SCATLOG, "a") as logfile:
                 await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
         return "MAXIMUM TOKEN LIMIT"
     else:
-        response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompts)
+        response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompts, config=types.GenerateContentConfig(temperature=0))
         totalOutputTokenCount = response.usage_metadata.total_token_count - totalInputTokenCount
-        print(f"Total Output Tokens: {totalOutputTokenCount}")
+        print(f"[Gemini SCAT Model {GEMINIMODEL}] Total Output Tokens: {totalOutputTokenCount}")
         cMonth = time.ctime(time.time()).split()[1]
         cDay = time.ctime(time.time()).split()[2]
         totalCost = calculateUsageCost(GEMINIMODEL, totalInputTokenCount, totalOutputTokenCount)
