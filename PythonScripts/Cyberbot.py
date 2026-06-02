@@ -641,14 +641,15 @@ async def on_member_remove(member):
             if str(member.guild.id) in admin["Current Admin Session Period"]:
                 del admin["Current Admin Session Period"][str(member.guild.id)]
             await asyncio.to_thread(sendEmail, "Admin access to Discord Server Removed", f"Your Cyberbot admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!", admin["User Email"])
-    async with ConfigLock:
-        async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
-            await file.write(json.dumps(CyberBotConfigData, indent=4))
-    try:
-        await member.send(f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!")
-    except Exception as error:
-        print(f"Error sending DM to user: {error}")
-
+            async with ConfigLock:
+                async with aiofiles.open(CYBERBOTCONFIG, "w") as file:
+                    await file.write(json.dumps(CyberBotConfigData, indent=4))
+            try:
+                await member.send(
+                    f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!")
+            except Exception as error:
+                print(f"Error sending DM to user: {error}")
+                
 
 async def isKlipyURLValid(gifURL: str) -> str:
     """
