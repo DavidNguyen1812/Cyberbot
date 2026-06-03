@@ -3,7 +3,6 @@
 import os
 import subprocess
 
-import openai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -77,6 +76,7 @@ from zoneinfo import ZoneInfo
 from urllib.parse import unquote
 from email_validator import validate_email, EmailNotValidError
 from google.genai import types
+import openai
 
 import json
 import zipfile
@@ -649,7 +649,7 @@ async def on_member_remove(member):
                     f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!")
             except Exception as error:
                 print(f"Error sending DM to user: {error}")
-                
+
 
 async def isKlipyURLValid(gifURL: str) -> str:
     """
