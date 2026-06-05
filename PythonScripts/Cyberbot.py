@@ -931,7 +931,7 @@ async def openAISCAT(filepath: str) -> str:
         return "MAXIMUM TOKEN LIMIT"
     else:
         try:
-            response = await GPTclient.responses.create(model=GPTMODEL,instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}], temperature=0, store=False)
+            response = await GPTclient.responses.create(model=GPTMODEL,instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}], temperature=0, store=False, max_output_tokens=5000)
             await GPTclient.files.delete(fileID)
             outputPromptTokenCount = response.usage.total_tokens - inputPromptTokenCount
             print(f"[Open AI SCAT Model {GPTMODEL}] Total Output Tokens: {outputPromptTokenCount}")
@@ -998,7 +998,7 @@ async def GeminiSCAT(filepath: str):
                 await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
         return "MAXIMUM TOKEN LIMIT"
     else:
-        response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompts, config=types.GenerateContentConfig(temperature=0))
+        response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompts, config=types.GenerateContentConfig(max_output_tokens=5000, temperature=0))
         totalOutputTokenCount = response.usage_metadata.total_token_count - totalInputTokenCount
         print(f"[Gemini SCAT Model {GEMINIMODEL}] Total Output Tokens: {totalOutputTokenCount}")
         cMonth = time.ctime(time.time()).split()[1]
