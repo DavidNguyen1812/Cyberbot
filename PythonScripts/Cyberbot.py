@@ -2797,7 +2797,8 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
     else:
         if message.author == Cyberbot.user or str(message.channel) == "Direct Message with Unknown User":
             return
-
+    if isEdit:
+        print(f"Re-edit Message detected!")
     guildId = str(message.guild.id)
     """Adding new server ID to Configuration file"""
     if not CyberBotConfigData["Non-monitoring-Channels"].get(guildId, ""):
@@ -3381,7 +3382,6 @@ async def manual_malware_scan(ctx, file_to_be_scanned: discord.Attachment):
 async def on_message_edit(before: discord.message.Message, after: discord.message.Message):
     await Cyberbot.process_commands(after)
     if before.content != after.content:
-        print(f"Re-edit Message detected!")
         await CyberBotScan(after, True)
 
 
