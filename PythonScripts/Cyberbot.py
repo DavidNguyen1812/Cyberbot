@@ -416,7 +416,7 @@ async def checking_expired_tokens():
         if resetTokens["Password Reset Token"].get(tokenID):
             await CronTaskLog(f"{time.ctime(time.time())}\nCronTask: REMOVING EXPIRED ONE TIME PASSWORD RESET TOKEN\nOne Time Token {resetTokens["Password Reset Token"][tokenID][0]} for {tokenID} expired\nSTATUS: SUCCESS")
             del resetTokens["Password Reset Token"][tokenID]
-        elif resetTokens["Email Confirmation Token"].get(tokenID):
+        if resetTokens["Email Confirmation Token"].get(tokenID):
             await CronTaskLog(f"{time.ctime(time.time())}\nCronTask: REMOVING EXPIRED ONE TIME EMAIL CONFIRMATION TOKEN\nOne Time Token {resetTokens["Email Confirmation Token"][tokenID][0]} for {tokenID} expired\nSTATUS: SUCCESS")
             del resetTokens["Email Confirmation Token"][tokenID]
         print(f"Removal Success!!!\n\n")
@@ -1881,7 +1881,7 @@ async def create_admin_account(ctx, user_email: str):
     if user_email in resetTokens["Email Confirmation Token"]:
         await LoggingCommandBeingExecuted(ctx.user.name,f"/create_admin_account\nCommand Status: Denied/An Email Confirmation Token that still valid already sent to the user email!")
         await ctx.followup.send(f"You have already request an admin account registration and a 10 minutes OTP code was sent to the email! Please confirm your email using the command /confirm_admin_account with the OTP code or wait until the OTP expired to request a new one again using this command!")
-        print(f"A valid Email OTP code already sent to {user_email}\n\n")
+        print(f"A valid Email OTP code already sent to the provided email\n\n")
     else:
         if not accountExist and not emailTaken:
             async with OneTimeTokenLock:
@@ -1897,7 +1897,7 @@ async def create_admin_account(ctx, user_email: str):
                         await file.write(json.dumps(resetTokens, indent=4))
                 await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Approved/An Email Confirmation Token was sent to the user email!")
                 await ctx.followup.send(f"Please confirm your email using the command /confirm_admin_account with the OTP code sent at {user_email}!")
-                print(f"New Email OTP code sent to {user_email}\n\n")
+                print(f"New Email OTP code sent to the provided email\n\n")
             else:
                 await LoggingCommandBeingExecuted(ctx.user.name, f"/create_admin_account\nCommand Status: Denied/Error sending email!")
                 await ctx.followup.send(f"Cyberbot can't register a new admin account with the email address: {user_email}")
@@ -2025,6 +2025,27 @@ async def remove_admin_account(ctx, user_email: str, password: str):
     await LoggingCommandBeingExecuted(ctx.user.name,f"/remove_admin_account\nCommand Status: Denied/User does not have a Cyberbot admin account yet!")
     await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
+
+
+# Command for server owner and in non-DM with Cyberbot ONLY!!
+@Cyberbot.tree.command(
+    name="viewing_admins",
+    description="Viewing a list of members with Cyberbot admin priviledge to your server!"
+)
+async def viewing_admins(ctx):
+    print(f"User {ctx.user.name} initiated /viewing_admins command")
+    await ctx.response.defer(ephemeral=True)
+    if ctx.user.id == ctx.guild.owner.id:
+        members = f"The following members are currently obtaining a Cyberbot admin privilege to this server **{ctx.guild.name}** - ID **{ctx.guild.id}**:\n\nServer Owner Name: **{ctx.user.name}**\nID: **{ctx.user.id}**\n\n"
+        for admin in CyberBotConfigData["Admins"]:
+            member = Cyberbot.get_user(admin["User ID"])
+            if ctx.guild.id in admin["Accessible Servers"] and ctx.guild.owner.id != member.id:
+                members += f"Member name: **{member.name}**\nID: **{member.id}**\n\n"
+        await ctx.followup.send(members)
+    else:
+        await LoggingCommandBeingExecuted(ctx.user.name,f"/viewing_admins\nCommand Status: Denied/Unauthorized User")
+        await ctx.followup.send("You're not the server's owner, the command /viewing_admins is restricted to server owner ONLY!")
+        print(f"User {ctx.user.name} not authorized to execute the command!\n\n")
 
 
 # Command for server owner and in non-DM with Cyberbot ONLY!!
