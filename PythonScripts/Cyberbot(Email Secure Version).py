@@ -362,27 +362,28 @@ async def writingLLMUsageCsv(csvPath: str, mode: Literal['w', 'a'], data: list, 
             await csvWriter.writerow(data)
 
 
-def calculateUsageCost(model: str, totalInputTokens: int, totalOutputTokens: int) -> float:
+def calculateUsageCost(model: str, InputTokens: list, totalOutputTokens: int) -> float:
     """
     Description: Calculate the usage cost of the LLM model based on the total input tokens and output tokens.
     :param model: LLM Model
-    :param totalInputTokens: The total input tokens of a prompt
+    :param InputTokens: The list of total input tokens [raw, cached read] of a prompt
     :param totalOutputTokens: The total output tokens of a prompt
     :return: The final calculated usage cost
     """
+    totalInputTokens = sum(InputTokens)
+    totalRawInputTokens =  InputTokens[0]
+    totalCachedReadTokens = InputTokens[1]
     if "gemini" in model:
-        if totalInputTokens > 200000:
-            totalInputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][1], 5)
-        else:
-            totalInputTokensCost = round((totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0], 5)
-        if totalOutputTokens > 200000:
-            totalOutputTokensCost = round((totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][1], 5)
-        else:
-            totalOutputTokensCost = round((totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0], 5)
-        return totalInputTokensCost + totalOutputTokensCost
+        InputCostIndex = 1 if totalInputTokens > 200000 else 0
+        OutputCostIndex = 1 if totalOutputTokens > 200000 else 0
     else:
-        totalCost = (totalInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][0] + (totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][0]
-        return round(totalCost, 5)
+        InputCostIndex = 0
+        OutputCostIndex = 0
+    totalRawInputCost = (totalRawInputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Input Token"][InputCostIndex]
+    totalCachedReadCost = (totalCachedReadTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Cached Read"][InputCostIndex]
+    totalOutputTokens =  (totalOutputTokens / 1000000) * LLMMODELINFORMATION[model]["Cost"]["Output Token"][OutputCostIndex]
+    totalCost = round(totalRawInputCost + totalCachedReadCost + totalOutputTokens, 5)
+    return totalCost
 
 
 async def CronTaskLog(logData: str) -> None:
@@ -756,10 +757,12 @@ async def GeminiCheckCommonPassword(password: str) -> bool:
     )
 
     inputPromptTokenCount = response.usage_metadata.prompt_token_count
-    outputPromptTokenCount = response.usage_metadata.total_token_count - inputPromptTokenCount
+    totalCachedRead = response.usage_metadata.cached_content_token_count or 0
+    totalRawInputTokens = response.usage_metadata.prompt_token_count - totalCachedRead
+    outputPromptTokenCount = response.usage_metadata.total_token_count - response.usage_metadata.prompt_token_count
     cMonth = time.ctime(time.time()).split()[1]
     cDay = time.ctime(time.time()).split()[2]
-    totalCost = calculateUsageCost(GEMINIMODEL, inputPromptTokenCount, outputPromptTokenCount)
+    totalCost = calculateUsageCost(GEMINIMODEL, [totalRawInputTokens, totalCachedRead], outputPromptTokenCount)
     await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",[f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINIMODEL, totalCost], MonthlyCSVLock)
     await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",[f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINIMODEL, totalCost], YearlyCSVLock)
 
@@ -888,7 +891,7 @@ async def checkingRealFileExtension(BytesContent: bytes, filename: str) -> str:
 
 async def openAISCAT(filepath: str) -> str:
     """
-    Description: Static Code Analysis on a script or decompiled file with OpenAI
+    Description: Static Code Analysis on a script of a decompiled file with OpenAI Codex
     :param filepath: The filepath of the file to analyze
     :return: The analysis results from OpenAI
     """
@@ -899,7 +902,7 @@ async def openAISCAT(filepath: str) -> str:
               f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
               f"# RESPONSE FORMAT:\n"
               f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
-    inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}])).input_tokens
+    inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}])).input_tokens
     print(f"[Open AI SCAT Model {GPTMODEL}] Total Input Tokens: {inputPromptTokenCount}")
     if inputPromptTokenCount > LLMMODELINFORMATION[GPTMODEL]["Maximum Input Tokens"] or inputPromptTokenCount > LLMMODELINFORMATION[GPTMODEL]["TPM"]:
         print(f"[Open AI SCAT Model {GPTMODEL}] MAXIMUM TOKEN LIMIT!!")
@@ -912,11 +915,13 @@ async def openAISCAT(filepath: str) -> str:
         try:
             response = await GPTclient.responses.create(model=GPTMODEL,instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}], temperature=0, store=False, max_output_tokens=5000)
             await GPTclient.files.delete(fileID)
+            totalCachedRead = response.usage.input_tokens_details.cached_tokens
+            totalRawInputTokens = response.usage.input_tokens - totalCachedRead
             outputPromptTokenCount = response.usage.total_tokens - inputPromptTokenCount
             print(f"[Open AI SCAT Model {GPTMODEL}] Total Output Tokens: {outputPromptTokenCount}")
             cMonth = time.ctime(time.time()).split()[1]
             cDay = time.ctime(time.time()).split()[2]
-            totalCost = calculateUsageCost(GPTMODEL, inputPromptTokenCount, outputPromptTokenCount)
+            totalCost = calculateUsageCost(GPTMODEL, [totalRawInputTokens, totalCachedRead], outputPromptTokenCount)
             await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], MonthlyCSVLock)
             await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPTMODEL, totalCost], YearlyCSVLock)
             async with ScatLogLock:
@@ -946,23 +951,21 @@ async def openAISCAT(filepath: str) -> str:
             return await openAISCAT(filepath)
 
 
-async def GeminiSCAT(filepath: str):
+async def GeminiSCAT(filepath: str) -> str:
     """
-    Description: Static Code Analysis on a script or decompiled file with Google Gemini
+    Description: Static Code Analysis on a script of a decompiled file with Google Gemini
     :param filepath: The filepath of the file to analyze
     :return: The analysis results from Gemini
     """
     uploadedFile = await GeminiClient.aio.files.upload(file=filepath)
     print(f"[Gemini SCAT Model {GEMINIMODEL}] Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
-    mainPrompt = (f"# ROLE:\n"
-                  f"You are a cybersecurity analyst on a file for potential malware detection\n"
-                  f"# ASK:\n"
-                  f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
-                  f"# RESPONSE FORMAT:\n"
-                  f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+    mainPrompt = (f"# ASK:\n"
+              f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
+              f"# RESPONSE FORMAT:\n"
+              f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
     prompts = [uploadedFile, mainPrompt]
     try:
-        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
+        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts, config=types.CountTokensConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection"))).total_tokens
     except Exception as error:
         print(f"[Gemini SCAT Model {GEMINIMODEL}] Received error: {error}\nAttempting upload original source file")
         uploadedFile = await GeminiClient.aio.files.upload(file=filepath.replace(".pdf", ".txt"))
@@ -977,18 +980,130 @@ async def GeminiSCAT(filepath: str):
                 await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: MAXIMUM TOKEN LIMIT!\n\n\n")
         return "MAXIMUM TOKEN LIMIT"
     else:
-        response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompts, config=types.GenerateContentConfig(max_output_tokens=5000, temperature=0))
+        response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompts, config=types.GenerateContentConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection", max_output_tokens=5000, temperature=0))
         totalOutputTokenCount = response.usage_metadata.total_token_count - totalInputTokenCount
         print(f"[Gemini SCAT Model {GEMINIMODEL}] Total Output Tokens: {totalOutputTokenCount}")
+        totalCachedRead = response.usage_metadata.cached_content_token_count or 0
+        totalRawInputTokens = response.usage_metadata.prompt_token_count - totalCachedRead
+        totalOutputTokenCount = response.usage_metadata.total_token_count - response.usage_metadata.prompt_token_count
         cMonth = time.ctime(time.time()).split()[1]
         cDay = time.ctime(time.time()).split()[2]
-        totalCost = calculateUsageCost(GEMINIMODEL, totalInputTokenCount, totalOutputTokenCount)
+        totalCost = calculateUsageCost(GEMINIMODEL, [totalRawInputTokens, totalCachedRead], totalOutputTokenCount)
         await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a",[f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINIMODEL, totalCost], MonthlyCSVLock)
         await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a",[f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINIMODEL, totalCost], YearlyCSVLock)
         async with ScatLogLock:
             async with aiofiles.open(SCATLOG, "a") as logfile:
                 await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {totalInputTokenCount}\nGemini {GEMINIMODEL} Scan Result: {response.text}\nTotal Output Tokens: {totalOutputTokenCount}\n\n\n")
         return response.text
+
+
+async def partialLLMSCAT(filepath: str, LLM: Literal["OpenAI", "Gemini"]) -> Tuple[bool, str]:
+    """
+    Description: Partial Static Code Analysis on a script of a large decompiled file with OpenAI Codex and Google Gemini
+    :param filepath: The filepath to be analyzed
+    :param LLM: Which LLM provider to use
+    :return: The result of the analysis
+    """
+    async with aiofiles.open(filepath, "r") as file:
+        content = await file.readlines()
+    if LLM == "OpenAI":
+        smallestContextWindow = min([LLMMODELINFORMATION[GPTMODEL]["Maximum Input Tokens"], LLMMODELINFORMATION[GPTMODEL]["TPM"]])
+        LLMModel = GPTMODEL
+    else:
+        smallestContextWindow = min([LLMMODELINFORMATION[GEMINIMODEL]["Maximum Input Tokens"], LLMMODELINFORMATION[GEMINIMODEL]["TPM"]])
+        LLMModel = GEMINIMODEL
+    inputPromptTokenCount = 100000000000
+    divideValue = 2
+    chunkSize = len(content) // divideValue
+    while inputPromptTokenCount > smallestContextWindow - 50000:
+        if LLM == "OpenAI":
+            inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": "".join(content[0:chunkSize])}]}])).input_tokens
+        else:
+            inputPromptTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents="".join(content[0:chunkSize]), config=types.CountTokensConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection"))).total_tokens
+        divideValue *= 2
+        chunkSize = len(content) // divideValue
+    summarization = ""
+    for i in range(0, len(content), chunkSize):
+        nextChunkSize = i + chunkSize
+        if i == 0:
+            prompt = ("# Context\n"
+                      "Below is a snippet of a large binary file decompiled by Ghidra (via Ghidhrathon)\n"
+                      f"The snippet starts at **Line {i + 1}** to **Line {nextChunkSize}**\n"
+                      f"```\n"
+                      f"{"".join(content[i:i + chunkSize])}\n"
+                      f"```\n"
+                      f"# Ask\n"
+                      f"Reads the source/script of the snippet and decides if it is a malware exhibits any malicious pattern.\n"
+                      f"# RESPONSE FORMAT:\n"
+                      f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+        else:
+            if nextChunkSize > len(content):
+                nextChunkSize = i + (len(content) - i)
+            prompt = ("# Context\n"
+                      "The following are the analysis summarization of a snippet of a large binary file decompiled by Ghidra (via Ghidhrathon)\n"
+                      f"The snippet starts at **Line {i - chunkSize + 1}** to **Line {i}**\n"
+                      f"# Analysis Summarization\n"
+                      f"```\n"
+                      f"{summarization}\n"
+                      f"```\n"
+                      f"# Ask\n"
+                      f"Continue analyze the next snippet of the same file starts at **Line {i + 1}** to **Line {nextChunkSize}** and decides if it is a malware exhibits any malicious pattern. Please use the previous analysis summarization for contextual reference.\n"
+                      f"```\n"
+                      f"{"".join(content[i:i + chunkSize])}\n"
+                      f"```\n"
+                      f"# RESPONSE FORMAT:\n"
+                      f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+        if LLM == "OpenAI":
+            try:
+                response = await GPTclient.responses.create(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}], temperature=0, store=True, max_output_tokens=5000)
+            except (openai.RateLimitError, openai.APITimeoutError) as Error:
+                print(f"[Open AI SCAT Model {LLMModel}] {Error}")
+                print(f"Attempt one more retry after 15s")
+                await asyncio.sleep(15)
+                try:
+                    response = await GPTclient.responses.create(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}], temperature=0, store=True, max_output_tokens=5000)
+                except Exception as Error:
+                    print(f"[Open AI SCAT Model {LLMModel}] {Error}")
+                    return False, "OpenAI API Error"
+            inputPromptTokenCount = response.usage.input_tokens
+            totalCachedRead = response.usage.input_tokens_details.cached_tokens
+            totalRawInputTokens = response.usage.input_tokens - totalCachedRead
+            outputPromptTokenCount = response.usage.output_tokens
+            textResponse = response.output_text
+            print(f"[Open AI SCAT Model {LLMModel}] Total Input Tokens: {inputPromptTokenCount}")
+            print(f"[Open AI SCAT Model {LLMModel}] Total Output Tokens: {outputPromptTokenCount}")
+        else:
+            try:
+                response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompt, config=types.GenerateContentConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection", max_output_tokens=5000, temperature=0))
+            except Exception as Error:
+                print(f"[Gemini AI SCAT Model {LLMModel}] {Error}")
+                print(f"Attempt one more retry after 15s")
+                await asyncio.sleep(15)
+                try:
+                    response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompt, config=types.GenerateContentConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection", max_output_tokens=5000, temperature=0))
+                except Exception as Error:
+                    print(f"[Gemini AI SCAT Model {LLMModel}] {Error}")
+                    return False, "Gemini API Error"
+            inputPromptTokenCount = response.usage_metadata.prompt_token_count
+            totalCachedRead = response.usage_metadata.cached_content_token_count or 0
+            totalRawInputTokens = response.usage_metadata.prompt_token_count - totalCachedRead
+            outputPromptTokenCount  = response.usage_metadata.total_token_count - inputPromptTokenCount
+            textResponse = response.text
+            print(f"[Gemini SCAT Model {LLMModel}] Total Input Tokens: {inputPromptTokenCount}")
+            print(f"[Gemini SCAT Model {LLMModel}] Total Output Tokens: {outputPromptTokenCount}")
+        cMonth = time.ctime(time.time()).split()[1]
+        cDay = time.ctime(time.time()).split()[2]
+        totalCost = calculateUsageCost(LLMModel, [totalRawInputTokens, totalCachedRead], outputPromptTokenCount)
+        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMMonthlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, LLMModel, totalCost], MonthlyCSVLock)
+        await writingLLMUsageCsv(f"{LLMUSAGELOGDIR}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, LLMModel, totalCost], YearlyCSVLock)
+        async with ScatLogLock:
+            async with aiofiles.open(SCATLOG, "a") as logfile:
+                await logfile.write(f"{time.ctime(time.time())}\nFile being scanned: {os.path.basename(filepath)}\nTotal Input Tokens: {inputPromptTokenCount}\nLLM Assistant {LLMModel} Scan Result: {textResponse}\nTotal Output Tokens: {outputPromptTokenCount}\n\n\n")
+        if textResponse.startswith(("True", "true")):
+            print(f"[SCAT Model {LLMModel}] Partial Analysis at line ** {i + 1} to {nextChunkSize} flagged malicious!!!\nAnalysis Summary: {response.output_text}")
+            return True, textResponse
+        summarization = textResponse
+    return False, "Nothing Malicious"
 
 
 async def virusTotalURLScan(url: str) -> str:
@@ -2797,8 +2912,9 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
             return
     if isEdit:
         print(f"Re-edit Message detected!")
-    guildId = str(message.guild.id)
+
     """Adding new server ID to Configuration file"""
+    guildId = str(message.guild.id)
     if not CyberBotConfigData["Non-monitoring-Channels"].get(guildId, ""):
         CyberBotConfigData["Non-monitoring-Channels"][guildId] = []
     if not CyberBotConfigData["Silent-Mode"].get(guildId, ""):
@@ -2891,7 +3007,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                             await message.reply(f"URL {url} can't be scanned by Virus Total!", suppress_embeds=True)
                         elif UrlScanResult == "URL scan too long!":
                             logMessage += f"URL SCAN SUMMARY: VirusTotal scan too long!\n"
-                            print(f"URL {url} can't be scanned by Virus Total")
+                            print(f"URL {url} took too long to be scanned by Virus Total")
                             await message.reply(f"URL {url} scanned by Virus Total took too long!", suppress_embeds=True)
                         else:
                             UrlScanResult = int(UrlScanResult.split(":")[1])
@@ -2899,7 +3015,10 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                 logMessage += f"URL SCAN SUMMARY: VirusTotal flagged as malicious\n"
                                 print(f"URL {url} flagged malicious by Virus Total")
                                 await addingHashedData(hashedUrl, "URLs", True)
-                                await message.channel.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
+                                try:
+                                    await message.author.send(f"URL {url} is flagged malicious by Virus Total", suppress_embeds=True)
+                                except Exception:
+                                    pass
                                 await message.delete()
                             else:
                                 logMessage += f"URL SCAN SUMMARY: VirusTotal scanned as Clean/Safe To Visit\n"
@@ -2961,60 +3080,60 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                             f" scanned!")
                 else:
                     async with Cyberbot.session.get(attachmentUrl, headers=MAINHEADERS) as response:
-                        RootFileHashed = hashlib.sha256(await response.read()).hexdigest()
-                        logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
+                        fileBytesContent = await response.read()
 
-                        """Checking file true extension"""
-                        RootFileTrueExt = await checkingRealFileExtension(await response.read(), RootFileName)
-                        logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
-                        sendingMessage += f"The file {RootFileName} extension is: {RootFileTrueExt}\n"
+                    RootFileHashed = hashlib.sha256(fileBytesContent).hexdigest()
+                    logMessage += f"SHA-256 HASH: {RootFileHashed}\n"
 
+                    """Checking file true extension"""
+                    RootFileTrueExt = await checkingRealFileExtension(fileBytesContent, RootFileName)
+                    logMessage += f"FILE EXTENSION: {RootFileTrueExt}\n"
+                    sendingMessage += f"The file {RootFileName} extension is: {RootFileTrueExt}\n"
+                    if not isSilent:
+                        await message.reply(f"The file {RootFileName} extension is: {RootFileTrueExt}")
+                    filePath = f"{filePath}{RootFileTrueExt}"
+
+                    """Checking if there is another subroutine scanning the same file"""
+                    if CURRENTSCANOPERATION.get(RootFileHashed, "") == "In Progress":
+                        print(f"File {RootFileName} is currently being scanned by other subroutine!")
                         if not isSilent:
-                            await message.reply(f"The file {RootFileName} extension is: {RootFileTrueExt}")
-                        filePath = f"{filePath}{RootFileTrueExt}"
+                            await message.reply(f"Another scan process for this file is under progressed...")
+                        while True:
+                            await asyncio.sleep(0)
+                            if not CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                                break
+                    else:
+                        CURRENTSCANOPERATION[RootFileHashed] = "In Progress"
 
-                        """Checking if there is another subroutine scanning the same file"""
-                        if CURRENTSCANOPERATION.get(RootFileHashed, "") == "In Progress":
-                            print(f"File {RootFileName} is currently being scanned by other subroutine!")
-                            if not isSilent:
-                                await message.reply(f"Another scan process for this file is under progressed...")
-                            while True:
-                                await asyncio.sleep(0)
-                                if not CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                    break
+                    """Checking if file hashed signature already in clean or malicious data set"""
+                    if await checkingCleanData(RootFileHashed, "All Extension"):
+                        logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
+                        sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
+                        print(f"File {RootFileName} has already been checked and recorded in the clean data set!\n\n")
+                        if not isSilent:
+                            await message.reply(f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
+                    elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
+                        logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
+                        sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!\n"
+                        print(f"File {RootFileName} has already been checked and recorded in the malicious file set!")
+                        if not manualScan:
+                            await message.reply(f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
+                            await message.delete()
                         else:
-                            CURRENTSCANOPERATION[RootFileHashed] = "In Progress"
-
-                        """Checking if file hashed signature already in clean or malicious data set"""
-                        if await checkingCleanData(RootFileHashed, "All Extension"):
-                            logMessage += "FILE SCAN SUMMARY: File attachment already scanned as Safe To Download\n"
-                            sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!\n"
-                            print(f"File {RootFileName} has already been checked and recorded in the clean data set!\n\n")
-                            if not isSilent:
-                                await message.reply(f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the safe to download dataset!")
-                        elif await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
-                            logMessage += "FILE SCAN SUMMARY: File attachment already flagged as Malicious\n"
-                            sendingMessage += f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!\n"
-                            print(f"File {RootFileName} has already been checked and recorded in the malicious file set!")
+                            await message.followup.send(sendingMessage)
+                        print(f"Scan Process Finish!\n\n")
+                        if CURRENTSCANOPERATION.get(RootFileHashed, ""):
+                            del CURRENTSCANOPERATION[RootFileHashed]
+                        await logScanSession(f"{logMessage}\n\n")
+                        return
+                    else:
+                        """Checking if file is encrypted"""
+                        if RootFileTrueExt.endswith(ENCRYPTEDFILEFORMATS):
+                            logMessage += "FILE SCAN SUMMARY: File attachment is encrypted. Cyberbot can not scan\n"
+                            print("File is encrypted, can not open without the key!")
+                            sendingMessage += f"The file {RootFileName} is an encrypted file that may contain confidential or malware information, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advice not to download the file and decrypt it! If you have the key, you can decrypt the file but do not open it and send again for Cyberbot to scan!\n"
                             if not manualScan:
-                                await message.reply(f"File {RootFileName} has been checked in Cyberbot scan history and recorded in the Malicious dataset! The content is deleted!")
-                                await message.delete()
-                            else:
-                                await message.followup.send(sendingMessage)
-                            print(f"Scan Process Finish!\n\n")
-                            if CURRENTSCANOPERATION.get(RootFileHashed, ""):
-                                del CURRENTSCANOPERATION[RootFileHashed]
-                            await logScanSession(f"{logMessage}\n\n")
-                            return
-                        else:
-
-                            """Checking if file is encrypted"""
-                            if RootFileTrueExt.endswith(ENCRYPTEDFILEFORMATS):
-                                logMessage += "FILE SCAN SUMMARY: File attachment is encrypted. Cyberbot can not scan\n"
-                                print("File is encrypted, can not open without the key!")
-                                sendingMessage += f"The file {RootFileName} is an encrypted file that may contain confidential or malware information, it is encrypted, so Cyberbot can not scan for the content. If you're intend to share the encrypted file for sharing legitimate information with someone, please do it via DM with the wanted party. If you received the file from someone that you do not know, I advice not to download the file and decrypt it! If you have the key, you can decrypt the file but do not open it and send again for Cyberbot to scan!\n"
-                                if not manualScan:
-                                    await message.reply(
+                                 await message.reply(
                                         f"The file {RootFileName} is an encrypted file that may"
                                         f" contain confidential or malware information, it is encrypted,"
                                         f" so Cyberbot can not scan for the content. If you're intend to share the "
@@ -3023,23 +3142,23 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                         f" that you do not know, I advice not to download the file and decrypt it!"
                                         f" If you have the key, you can decrypt the file but do not open it and send"
                                         f" again for Cyberbot to scan!")
+                        else:
+                            if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
+                                print("Downloading attachment content...")
+                                async with aiofiles.open(filePath, "wb") as file:
+                                    await file.write(await response.read())
+                                print("Attachment file downloaded!")
+                                mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
+                                os.mkdir(mountPoint)
+                                print(f"Mount point {mountPoint} created!")
+                                scanOperation = True
+                                FILEDOWNLOADCOUNTER += 1
                             else:
-                                if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
-                                    print("Downloading attachment content...")
-                                    async with aiofiles.open(filePath, "wb") as file:
-                                        await file.write(await response.read())
-                                    print("Attachment file downloaded!")
-                                    mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
-                                    os.mkdir(mountPoint)
-                                    print(f"Mount point {mountPoint} created!")
-                                    scanOperation = True
-                                    FILEDOWNLOADCOUNTER += 1
-                                else:
-                                    logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
-                                    sendingMessage += f"The file {RootFileName} extension is outside of Cyberbot scope of file formats for malware analysis!\n"
-                                    print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
-                                    if not manualScan:
-                                        await message.reply(f"The file {RootFileName} extension is outside of Cyberbot scope of file formats for malware analysis!")
+                                logMessage += "FILE SCAN SUMMARY: File attachment outside of Cyberbot scope of file formats for malware analysis!\n"
+                                sendingMessage += f"The file {RootFileName} extension is outside of Cyberbot scope of file formats for malware analysis!\n"
+                                print("File attachment outside of Cyberbot scope of file formats for malware analysis!")
+                                if not manualScan:
+                                    await message.reply(f"The file {RootFileName} extension is outside of Cyberbot scope of file formats for malware analysis!")
 
                     if scanOperation:
                         print(f"Start scanning {RootFileName} contents with Virus Total...")
@@ -3166,8 +3285,9 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                     filepath = os.path.join(dirpath, filename)
                                     fileSize = os.path.getsize(filepath)
                                     async with aiofiles.open(filepath, mode="rb") as source:
-                                        fileExt = await checkingRealFileExtension(await source.read(), filename)
-                                        HashedFileData = hashlib.sha256(await source.read()).hexdigest()
+                                        fileBytesContent = await source.read()
+                                    fileExt = await checkingRealFileExtension(fileBytesContent, filename)
+                                    HashedFileData = hashlib.sha256(fileBytesContent).hexdigest()
                                     print( f"Found file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                     logMessage += f"SHA-256 HASH: {HashedFileData}\nFILE SIZE: {fileSize} bytes\nFILE EXT: {fileExt}\n"
 
@@ -3238,11 +3358,12 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                 filepath = os.path.join(dirpath, filename)
                                 fileSize = os.path.getsize(filepath)
                                 async with aiofiles.open(filepath, "rb") as source:
-                                    fileExt = await checkingRealFileExtension(await source.read(), filename)
-                                    HashedCompiledFileData = hashlib.sha256(await source.read()).hexdigest()
+                                    fileBytesContent = await source.read()
+                                fileExt = await checkingRealFileExtension(fileBytesContent, filename)
+                                HashedCompiledFileData = hashlib.sha256(fileBytesContent).hexdigest()
 
                                 if fileExt in EXECUTABLEFORMATS:
-                                    print(f"Found compiled file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                    print(f"Found compiled/executable/binary file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                     outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, mountPoint, filename)
                                     if outputFilePath != "ERROR":
                                         async with aiofiles.open(outputFilePath, "rb") as file:
@@ -3255,67 +3376,75 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                 filepath = os.path.join(dirpath, filename)
                                 fileSize = os.path.getsize(filepath)
                                 async with aiofiles.open(filepath, "rb") as source:
-                                    fileExt = await checkingRealFileExtension(await source.read(), filename)
-                                    HashedScriptFileData = hashlib.sha256(await source.read()).hexdigest()
+                                    fileBytesContent = await source.read()
+                                fileExt = await checkingRealFileExtension(fileBytesContent, filename)
+                                HashedScriptFileData = hashlib.sha256(fileBytesContent).hexdigest()
+
                                 """SCAT Process with OpenAI and Gemini LLMs"""
                                 if fileExt in SCRIPTFILEFORMATS:
                                     print(f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                     print(f"Converting script file {filename} to PDF...")
+
                                     pdf = FPDF()
                                     pdf.add_page()
                                     pdf.set_font("Arial", size=12)
-                                    pdfpath = f"{filepath.split(".")[0]}.pdf"
-                                    async with aiofiles.open(filepath, "r", encoding="utf-8") as SourceCodefile:
-                                        pdf.multi_cell(0, 10, (await SourceCodefile.read()).encode("latin-1", errors="replace").decode("latin-1"))
-                                        pdf.output(pdfpath)
-                                    filepath = pdfpath
-                                    print(f"Conversion successes!")
+                                    pdfPath = f"{os.path.splitext(filepath)}.pdf"
+                                    decodedContent = fileBytesContent.decode("utf-8", errors="replace").encode("latin-1", errors="replace").decode("latin-1")
+                                    pdf.multi_cell(0, 10, decodedContent)
+                                    pdf.output(pdfPath)
+                                    print("PDF Conversion successes!")
+
                                     flaggedMalicious = False
+                                    LLMModel = ""
+                                    LLMResult = ""
+
                                     print(f"Start {GPTMODEL} scan on file {filename} for malware analysis...")
-                                    GptScanResult = await openAISCAT(filepath)
+                                    GptScanResult = await openAISCAT(pdfPath)
                                     if GptScanResult.startswith(("True", "true")):
-                                        logMessage += f"FILE SCAN SUMMARY: {GPTMODEL} flagged as Malicious\n"
-                                        sendingMessage += f"{GPTMODEL} scan result:\n{GptScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
-                                        flaggedMalicious = True
-                                        print(f"{GPTMODEL} analyzed the content of being a potential malware!")
+                                        flaggedMalicious, LLModel, LLMResult = True, GPTMODEL, GptScanResult
+                                    elif GptScanResult == "MAXIMUM TOKEN LIMIT":
+                                        print(f"File too large for OpenAI {GPTMODEL} to scan. Proceed to scan by small chunk...")
+                                        flaggedMalicious, GptScanResult = await partialLLMSCAT(filepath, "OpenAI")
+                                        if flaggedMalicious:
+                                            LLModel, LLMResult = GPTMODEL, GptScanResult
+
+                                    if not flaggedMalicious:
+                                        print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
+                                        GeminiScanResult = await GeminiSCAT(pdfPath)
+                                        if GeminiScanResult.startswith(("True", "true")):
+                                            flaggedMalicious, LLModel, LLMResult = True, GEMINIMODEL, GeminiScanResult
+                                        elif GeminiScanResult == "MAXIMUM TOKEN LIMIT":
+                                            print(
+                                                f"File too large for Gemini {GEMINIMODEL} to scan. Proceed to scan by small chunk...")
+                                            flaggedMalicious, GeminiScanResult = await partialLLMSCAT(filepath, "Gemini")
+                                            if flaggedMalicious:
+                                                LLModel, LLMResult = GEMINIMODEL, GeminiScanResult
+
+                                    if flaggedMalicious:
+                                        logMessage += f"FILE SCAN SUMMARY: {LLMModel} flagged as Malicious\n"
+                                        sendingMessage += f"{LLMModel} scan result:\n{LLMResult}\n\nThe file {filename} was detected of being a potential malicious file, therefore it was deleted!\n"
+                                        print(f"{LLMModel} analyzed the content of being a potential malware!")
                                         if not manualScan:
                                             print(f"Creating a txt file to send the report...")
                                             buffer = BytesIO()
-                                            buffer.write(GptScanResult.encode('utf-8'))
+                                            buffer.write(LLMResult.encode('utf-8'))
                                             buffer.seek(0)
-                                            resultFile = discord.File(fp=buffer, filename="GPTScanResult.txt")
+                                            resultFile = discord.File(fp=buffer, filename=f"{LLMModel}ScanResult.txt")
                                             await message.reply(
-                                                f"{GPTMODEL} scan result for file {os.path.basename(filepath)} suggested"
-                                                f" a potential malicious file, therefore it was deleted!",
-                                                file=resultFile)
-                                    if not flaggedMalicious:
-                                        print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
-                                        GeminiScanResult = await GeminiSCAT(filepath)
-                                        if GeminiScanResult.startswith(("True", "true")):
-                                            logMessage += f"FILE SCAN SUMMARY: {GEMINIMODEL} flagged as Malicious\n"
-                                            sendingMessage += f"{GEMINIMODEL} scan result:\n{GeminiScanResult}\n\nThe file {os.path.basename(filepath)} was detected of being a potential malicious file, therefore it was deleted!\n"
-                                            flaggedMalicious = True
-                                            print(f"{GEMINIMODEL} analyzed the content of being a potential malware!")
-                                            if not manualScan:
-                                                print(f"Creating a txt file to send the report...")
-                                                buffer = BytesIO()
-                                                buffer.write(GeminiScanResult.encode('utf-8'))
-                                                buffer.seek(0)
-                                                resultFile = discord.File(fp=buffer, filename="GeminiScanResult.txt")
-                                                await message.reply(
-                                                    f"{GEMINIMODEL} scan result for file {os.path.basename(filepath)} suggested"
+                                                    f"{LLMModel} scan result for file {filename} suggested"
                                                     f" a potential malicious file, therefore it was deleted!",
                                                     file=resultFile)
-                                    if flaggedMalicious:
+
                                         if HashedScriptFileData == RootFileHashed:
                                             await addingHashedData(RootFileHashed, RootFileTrueExt, True)
                                         else:
                                             await addingHashedData(HashedScriptFileData, fileExt, True)
                                             await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                            for HashedData in CompiledHashedMap:
-                                                if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                            for HashedData, mappedHash in CompiledHashedMap.items():
+                                                if mappedHash == HashedScriptFileData and HashedData != RootFileHashed:
                                                     await addingHashedData(HashedData, ".exe", True)
                                                     break
+
                                         if not manualScan:
                                             await message.delete()
                                         else:
@@ -3327,20 +3456,24 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                                 await message.followup.send(file=resultFile)
                                             else:
                                                 await message.followup.send(sendingMessage)
+
                                         print("Cleaning up process...")
                                         shutil.rmtree(mountPoint)
                                         print(f"Scan Process Finish!\n\n")
+
                                         if CURRENTSCANOPERATION.get(RootFileHashed, ""):
                                             del CURRENTSCANOPERATION[RootFileHashed]
                                         await logScanSession(f"{logMessage}\n\n")
                                         return
+
                                     else:
                                         await addingHashedData(HashedScriptFileData, fileExt, False)
-                                        for HashedData in CompiledHashedMap:
-                                            if CompiledHashedMap[HashedData] == HashedScriptFileData and HashedData != RootFileHashed:
+                                        for HashedData, mappedHash in CompiledHashedMap.items():
+                                            if mappedHash == HashedScriptFileData and HashedData != RootFileHashed:
                                                 await addingHashedData(HashedData, ".exe", False)
                                                 break
                                         logMessage += f"FILE SCAN SUMMARY: File passed Virus Total, OpenAI and Gemini SCAT.\n"
+
                         print("Cleaning up process...")
                         shutil.rmtree(mountPoint)
                         await addingHashedData(RootFileHashed, RootFileTrueExt, False)
