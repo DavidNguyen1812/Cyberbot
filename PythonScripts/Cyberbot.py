@@ -3146,7 +3146,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                             if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
                                 print("Downloading attachment content...")
                                 async with aiofiles.open(filePath, "wb") as file:
-                                    await file.write(await response.read())
+                                    await file.write(fileBytesContent)
                                 print("Attachment file downloaded!")
                                 mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
                                 os.mkdir(mountPoint)
