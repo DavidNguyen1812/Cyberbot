@@ -983,7 +983,7 @@ async def GeminiSCAT(filepath: str) -> str:
               f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
     prompts = [uploadedFile, mainPrompt]
     try:
-        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts, config=types.CountTokensConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection"))).total_tokens
+        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
     except Exception as error:
         print(f"[Gemini SCAT Model {GEMINIMODEL}] Received error: {error}\nAttempting upload original source file")
         uploadedFile = await GeminiClient.aio.files.upload(file=filepath.replace(".pdf", ".txt"))
@@ -1037,7 +1037,7 @@ async def partialLLMSCAT(filepath: str, LLM: Literal["OpenAI", "Gemini"]) -> Tup
         if LLM == "OpenAI":
             inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": "".join(content[0:chunkSize])}]}])).input_tokens
         else:
-            inputPromptTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents="".join(content[0:chunkSize]), config=types.CountTokensConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection"))).total_tokens
+            inputPromptTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents="".join(content[0:chunkSize]))).total_tokens
         divideValue *= 2
         chunkSize = len(content) // divideValue
     summarization = ""
@@ -3388,7 +3388,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                     pdf = FPDF()
                                     pdf.add_page()
                                     pdf.set_font("Arial", size=12)
-                                    pdfPath = f"{os.path.splitext(filepath)}.pdf"
+                                    pdfPath = filepath.replace(".txt", ".pdf")
                                     decodedContent = fileBytesContent.decode("utf-8", errors="replace").encode("latin-1", errors="replace").decode("latin-1")
                                     pdf.multi_cell(0, 10, decodedContent)
                                     pdf.output(pdfPath)
