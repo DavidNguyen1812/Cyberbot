@@ -965,7 +965,7 @@ async def GeminiSCAT(filepath: str) -> str:
               f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
     prompts = [uploadedFile, mainPrompt]
     try:
-        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts, config=types.CountTokensConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection"))).total_tokens
+        totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents=prompts)).total_tokens
     except Exception as error:
         print(f"[Gemini SCAT Model {GEMINIMODEL}] Received error: {error}\nAttempting upload original source file")
         uploadedFile = await GeminiClient.aio.files.upload(file=filepath.replace(".pdf", ".txt"))
@@ -1019,7 +1019,7 @@ async def partialLLMSCAT(filepath: str, LLM: Literal["OpenAI", "Gemini"]) -> Tup
         if LLM == "OpenAI":
             inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": "".join(content[0:chunkSize])}]}])).input_tokens
         else:
-            inputPromptTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents="".join(content[0:chunkSize]), config=types.CountTokensConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection"))).total_tokens
+            inputPromptTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents="".join(content[0:chunkSize]))).total_tokens
         divideValue *= 2
         chunkSize = len(content) // divideValue
     summarization = ""
@@ -3146,7 +3146,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                             if RootFileTrueExt in CYBERBOTSCOPEOFORMATS:
                                 print("Downloading attachment content...")
                                 async with aiofiles.open(filePath, "wb") as file:
-                                    await file.write(await response.read())
+                                    await file.write(fileBytesContent)
                                 print("Attachment file downloaded!")
                                 mountPoint = f"{DOWNLOADINGDIRPATH}{FILEDOWNLOADCOUNTER}MainMountPoint/"
                                 os.mkdir(mountPoint)
