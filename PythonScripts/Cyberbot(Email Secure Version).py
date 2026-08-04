@@ -714,6 +714,25 @@ def sendEmail(subject: str, content: str, receiver_email: str) -> Literal["Email
     return "Email sent successfully!"
 
 
+def txtToPDFConversion(txtFile: str, outputPDFPath: str):
+    """
+    Description: Converting the text/document content of a file to PDF frames
+    :param txtFile: The ASCII content of a file
+    :param outputPDFPath: The output PDF path
+    :return: None
+    """
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_author("Arial", size=12)
+        decodedContent = txtFile.encode("latin-1", errors="replace").decode("latin-1")
+        pdf.multi_cell(0, 10, decodedContent)
+        pdf.output(outputPDFPath)
+        print("PDF Conversion successes!")
+    except Exception as error:
+        print(f"PDF Conversion error: {error}")
+
+
 async def LoggingCommandBeingExecuted(userName: str, command: str) -> None:
     """
     DescriptionL Logging an event a user calling Cyberbot application command on Discord
@@ -1015,13 +1034,13 @@ async def partialLLMSCAT(filepath: str, LLM: Literal["OpenAI", "Gemini"]) -> Tup
     inputPromptTokenCount = 100000000000
     divideValue = 2
     chunkSize = len(content) // divideValue
-    while inputPromptTokenCount > smallestContextWindow - 50000:
+    while inputPromptTokenCount > smallestContextWindow - 4000:
         if LLM == "OpenAI":
             inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": "".join(content[0:chunkSize])}]}])).input_tokens
         else:
             inputPromptTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINIMODEL, contents="".join(content[0:chunkSize]))).total_tokens
-        divideValue *= 2
-        chunkSize = len(content) // divideValue
+        divideValue += 0.5
+        chunkSize = round(len(content) // divideValue)
     summarization = ""
     for i in range(0, len(content), chunkSize):
         nextChunkSize = i + chunkSize
@@ -1058,8 +1077,8 @@ async def partialLLMSCAT(filepath: str, LLM: Literal["OpenAI", "Gemini"]) -> Tup
                 response = await GPTclient.responses.create(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}], temperature=0, store=True, max_output_tokens=5000)
             except (openai.RateLimitError, openai.APITimeoutError) as Error:
                 print(f"[Open AI SCAT Model {LLMModel}] {Error}")
-                print(f"Attempt one more retry after 15s")
-                await asyncio.sleep(15)
+                print(f"Attempt one more retry after 60s")
+                await asyncio.sleep(60)
                 try:
                     response = await GPTclient.responses.create(model=GPTMODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}], temperature=0, store=True, max_output_tokens=5000)
                 except Exception as Error:
@@ -1077,8 +1096,8 @@ async def partialLLMSCAT(filepath: str, LLM: Literal["OpenAI", "Gemini"]) -> Tup
                 response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompt, config=types.GenerateContentConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection", max_output_tokens=5000, temperature=0))
             except Exception as Error:
                 print(f"[Gemini AI SCAT Model {LLMModel}] {Error}")
-                print(f"Attempt one more retry after 15s")
-                await asyncio.sleep(15)
+                print(f"Attempt one more retry after 60s")
+                await asyncio.sleep(60)
                 try:
                     response = await GeminiClient.aio.models.generate_content(model=GEMINIMODEL, contents=prompt, config=types.GenerateContentConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection", max_output_tokens=5000, temperature=0))
                 except Exception as Error:
@@ -3382,17 +3401,12 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
 
                                 """SCAT Process with OpenAI and Gemini LLMs"""
                                 if fileExt in SCRIPTFILEFORMATS:
-                                    print(f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
+                                    print(
+                                        f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                     print(f"Converting script file {filename} to PDF...")
-
-                                    pdf = FPDF()
-                                    pdf.add_page()
-                                    pdf.set_font("Arial", size=12)
-                                    pdfPath = f"{os.path.splitext(filepath)}.pdf"
-                                    decodedContent = fileBytesContent.decode("utf-8", errors="replace").encode("latin-1", errors="replace").decode("latin-1")
-                                    pdf.multi_cell(0, 10, decodedContent)
-                                    pdf.output(pdfPath)
-                                    print("PDF Conversion successes!")
+                                    pdfPath = filepath.replace(".txt", ".pdf")
+                                    await asyncio.to_thread(txtToPDFConversion,
+                                                            fileBytesContent.decode("utf-8", errors="replace"), pdfPath)
 
                                     flaggedMalicious = False
                                     LLMModel = ""
@@ -3403,20 +3417,23 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                     if GptScanResult.startswith(("True", "true")):
                                         flaggedMalicious, LLModel, LLMResult = True, GPTMODEL, GptScanResult
                                     elif GptScanResult == "MAXIMUM TOKEN LIMIT":
-                                        print(f"File too large for OpenAI {GPTMODEL} to scan. Proceed to scan by small chunk...")
+                                        print(
+                                            f"File too large for OpenAI {GPTMODEL} to scan. Proceed to scan by small chunk...")
                                         flaggedMalicious, GptScanResult = await partialLLMSCAT(filepath, "OpenAI")
                                         if flaggedMalicious:
                                             LLModel, LLMResult = GPTMODEL, GptScanResult
 
                                     if not flaggedMalicious:
-                                        print(f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
+                                        print(
+                                            f"Start Gemini Model {GEMINIMODEL} scan on file {filename} for malware analysis...")
                                         GeminiScanResult = await GeminiSCAT(pdfPath)
                                         if GeminiScanResult.startswith(("True", "true")):
                                             flaggedMalicious, LLModel, LLMResult = True, GEMINIMODEL, GeminiScanResult
                                         elif GeminiScanResult == "MAXIMUM TOKEN LIMIT":
                                             print(
                                                 f"File too large for Gemini {GEMINIMODEL} to scan. Proceed to scan by small chunk...")
-                                            flaggedMalicious, GeminiScanResult = await partialLLMSCAT(filepath, "Gemini")
+                                            flaggedMalicious, GeminiScanResult = await partialLLMSCAT(filepath,
+                                                                                                      "Gemini")
                                             if flaggedMalicious:
                                                 LLModel, LLMResult = GEMINIMODEL, GeminiScanResult
 
@@ -3431,9 +3448,9 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                             buffer.seek(0)
                                             resultFile = discord.File(fp=buffer, filename=f"{LLMModel}ScanResult.txt")
                                             await message.reply(
-                                                    f"{LLMModel} scan result for file {filename} suggested"
-                                                    f" a potential malicious file, therefore it was deleted!",
-                                                    file=resultFile)
+                                                f"{LLMModel} scan result for file {filename} suggested"
+                                                f" a potential malicious file, therefore it was deleted!",
+                                                file=resultFile)
 
                                         if HashedScriptFileData == RootFileHashed:
                                             await addingHashedData(RootFileHashed, RootFileTrueExt, True)
