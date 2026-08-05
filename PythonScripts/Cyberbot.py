@@ -1155,6 +1155,16 @@ async def virusTotalURLScan(url: str) -> str:
         "accept": "application/json",
         "content-type": "application/x-www-form-urlencoded"
     }
+    sha256 = hashlib.sha256(url.encode()).hexdigest()
+    print("[Virus Total] Checking any existing past analysis based on the URL SHA-256 hash...")
+    async with Cyberbot.session.get(f"{HostUrl}/{sha256}", headers=headers) as previousAnalysisResponse:
+        if previousAnalysisResponse.status == 200:
+            previousAnalysisData = await previousAnalysisResponse.json()
+            stats = previousAnalysisData["data"]["attributes"]["last_analysis_stats"]
+            print(f"[Virus Total] Malicious counted:{stats['malicious']}")
+            return f"Malicious counted:{stats['malicious']}"
+        else:
+            print("[Virus Total] No existing past analysis based on the URL SHA-256 hash found! Proceeding to submit the URL content for scan...")
     async with Cyberbot.session.post(HostUrl, data={"url": url}, headers=headers) as response:
         if response.status == 200:
             data = await response.json()
@@ -1167,7 +1177,6 @@ async def virusTotalURLScan(url: str) -> str:
                         return "URL can't be scanned!"
                     analysis = await analysisResponse.json()
                     status = analysis["data"]["attributes"]["status"]
-
                     if status == "completed":
                         print(f"[Virus Total] Malicious counted:{analysis["data"]["attributes"]["stats"]['malicious']}")
                         return f"Malicious counted:{analysis["data"]["attributes"]["stats"]['malicious']}"
@@ -1188,11 +1197,31 @@ async def virusTotalFileScan(filePath: str) -> str:
     """
     HostUrl = "https://www.virustotal.com/api/v3/files"
     headers = {
-        'x-apikey': virusTotalApiKey
+        'x-apikey': virusTotalApiKey,
+        "accept": "application/json",
     }
     async with aiofiles.open(filePath, "rb") as f:
         file = aiohttp.FormData()
-        file.add_field('file', await f.read(), filename=os.path.basename(filePath))
+        fileBytesContent = await f.read()
+        file.add_field('file', fileBytesContent, filename=os.path.basename(filePath))
+        sha256 = hashlib.sha256(fileBytesContent).hexdigest()
+    print("[Virus Total] Checking any existing past analysis based on the file SHA-256 hash...")
+    async with Cyberbot.session.get(f"{HostUrl}/{sha256}", headers=headers) as previousAnalysisResponse:
+        if previousAnalysisResponse.status == 200:
+            previousAnalysisData = await previousAnalysisResponse.json()
+            stats = previousAnalysisData["data"]["attributes"]["last_analysis_stats"]
+            print(
+                f"[Virus Total] Scan complete for {filePath}: "
+                f"{stats['malicious']} malicious, {stats['suspicious']} suspicious, "
+                f"{stats['harmless']} harmless, {stats['undetected']} undetected."
+            )
+            malicious = stats["malicious"] if stats["malicious"] else 0
+            suspicious = stats['suspicious'] if stats['suspicious'] else 0
+            harmless = stats['harmless'] if stats['harmless'] else 0
+            undetected = stats['undetected'] if stats['undetected'] else 0
+            return f"{malicious}:{suspicious}:{harmless}:{undetected}"
+        else:
+            print("[Virus Total] No existing past analysis based on the file SHA-256 hash found! Proceeding to upload file content for scan...")
     async with Cyberbot.session.post(HostUrl, headers=headers, data=file) as response:
         if response.status == 200:
             data = await response.json()
