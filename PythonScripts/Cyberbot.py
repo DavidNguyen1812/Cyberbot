@@ -177,12 +177,12 @@ labels = {
 GPTclient = AsyncOpenAI()
 GeminiClient = genai.Client()
 GPTMODEL = "gpt-5.3-codex"
-GEMINIMODEL = "gemini-3.1-pro-preview"
+GEMINIMODEL = "gemini-3.8-flash"
 LLMMODELINFORMATION = {
     GEMINIMODEL:
         {
             "Maximum Input Tokens": 1048576,
-            "Cost": {"Input Token": [2, 4], "Output Token": [12, 18], "Cached Read": [0.2, 0.4]},
+            "Cost": {"Input Token": [0.75, 0.75], "Output Token": [3.75, 3.75], "Cached Read": [0.075, 0.075], "Cached Writes": [0.5, 0.5]},
             "TPM": 2000000
         },
     GPTMODEL:
@@ -649,46 +649,40 @@ async def on_member_remove(member):
                 print(f"Error sending DM to user: {error}")
 
 
-async def isKlipyURLValid(gifURL: str) -> str:
+async def isKlipyURLValid(gifURL: str) -> bool:
     """
     Description: Klipy URL validation
     :param gifURL: The Klipy URL to check
-    :return: The correct Klipy URL or Invalid if URL is not a Klipy URL
+    :return: True if the gif URL successfully authenticated with the offical Klipy API else False
     """
     try:
         gifSlug = os.path.basename(gifURL)
         gifURL = f"https://api.klipy.com/api/v1/{KliphyAPI}/gifs/items?slugs={gifSlug}"
         async with Cyberbot.session.get(gifURL) as response:
             if response.status == 200:
-                data = await response.json()
-                if data["result"]:
-                    gifURL = data["data"]["data"][0]["file"]["hd"]["gif"]["url"]
-                    return gifURL
-        return "Invalid"
+                return True
+        return False
     except Exception as error:
         print(f"Klipy URL error: {error}")
-        return "Invalid"
+        return False
 
 
-async def isTenorURLValid(gifURL: str) -> str:
+async def isTenorURLValid(gifURL: str) -> bool:
     """
     Description: Tenor URL validation
     :param gifURL: Tenor URL
-    :return: The correct tenor URL or Invalid if URL is not a tenor URL
+    :return: True if the gif URL successfully authenticated with the offical Klipy API else False
     """
     try:
         gifID = gifURL.split('/')[4].split('-')[len(gifURL.split('/')[4].split('-')) - 1]
         gifURL = f"https://tenor.googleapis.com/v2/posts?ids={gifID}&key={TENORAPI}"
         async with Cyberbot.session.get(gifURL) as response:
             if response.status == 200:
-                data = await response.json()
-                if data["results"]:
-                    gifUrl = data["results"][0]["media_formats"]["gif"]["url"]
-                    return gifUrl
-            return "Invalid"
+                return True
+        return False
     except Exception as error:
         print(f"Tenor URL error: {error}")
-        return "Invalid"
+        return False
 
 
 def sendEmail(subject: str, content: str, receiver_email: str) -> Literal["Email sent successfully!", "Email sent unsuccessfully!"]:
@@ -2885,7 +2879,6 @@ async def processingUrls(URLs: list, message: discord.message.Message, logMessag
     print("Detecting URLs in text content...")
     if not silent:
         await message.reply("Cyberbot detected URL(s) in text content. Begin scanning the URL(s) with Virus Total.")
-
     resolvedUrls = []
     fileAttachmentUrls = {}
     for url in URLs:
@@ -2897,47 +2890,44 @@ async def processingUrls(URLs: list, message: discord.message.Message, logMessag
             await message.reply(f"URL contains a ../ scheme hinted potential directory transversal attack on the host web server!")
             await message.delete()
             return [], {}, logMessage, False
-        """Resolving Klipy URL"""
-        if url.startswith("https://klipy.com/gifs/"):
-            print(f"URL {url} is a Klipy gif, getting the real gif URL...")
-            klipyUrl = await isKlipyURLValid(url)
-            if klipyUrl != "Invalid":
-                print(f"Klipy URL is valid!")
-                resolvedUrls.append(klipyUrl)
+        """Validate Klipy and Tenor GIF URLs"""
+        if url.startswith(("https://klipy.com/gifs/", "https://tenor.com/view")):
+            if url.startswith("https://klipy.com/gifs/"):
+                gifDomain = "Klipy"
+                gifValidation = await isKlipyURLValid(url)
             else:
-                print(f"Klipy URL is invalid!")
-                logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
-                await message.reply(f"Cyberbot cannot access URL {url}")
+                gifValidation = await isTenorURLValid(url)
+                gifDomain = "Tenor"
+            if gifValidation:
+                print(f"{gifDomain} URL is valid!")
+                logMessage += f"URL SCAN SUMMARY: {gifDomain} Gif URL {url} successfully authenticated with their official provider.\n"
+                await addingHashedData(hashlib.sha256(url.encode("utf-8")).hexdigest(), ".gif", False)
+            else:
+                print(f"{gifDomain} URL is invalid!")
+                await addingHashedData(hashlib.sha256(url.encode("utf-8")).hexdigest(), ".gif", True)
+                logMessage += f"URL SCAN SUMMARY: {gifDomain} Gif URL {url} is invalid\n\n"
+                await message.reply(f"The {gifDomain} URL {url} is not a valid URL due to failure to authenticate with {gifDomain} official API")
+                await message.delete()
+                return [], {}, logMessage, False
         else:
-            """Resolving Tenor URL"""
-            if url.startswith("https://tenor.com/view"):
-                print(f"URL {url} is a Tenor gif, getting the real gif URL...")
-                tenorUrl = await isTenorURLValid(url)
-                if tenorUrl != "Invalid":
-                    print(f"Tenor URL is valid!")
-                    resolvedUrls.append(tenorUrl)
-                else:
-                    print(f"Tenor URL is invalid!")
-                    logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url}\n"
-                    await message.reply(f"Cyberbot cannot access URL {url}")
-            else:
-                """URL access validation"""
-                try:
-                    async with Cyberbot.session.get(url, headers=MAINHEADERS) as testValidURLResponse:
-                        if testValidURLResponse.status in range(400, 500):
-                            logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
-                            print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
-                            await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
+            """URL access validation"""
+            try:
+                async with Cyberbot.session.get(url, headers=MAINHEADERS) as testValidURLResponse:
+                    if testValidURLResponse.status in range(400, 500):
+                        logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Status Code {testValidURLResponse.status}\n"
+                        print(f"Can not access URL {url}\nStatus Code: {testValidURLResponse.status}")
+                        await message.reply(f"Cyberbot cannot access URL {url} with status code: {testValidURLResponse.status}", suppress_embeds=True)
+                    else:
+                        if url.startswith("https://cdn.discordapp.com/attachments/"):
+                            print(f"URL is a Discord attachment!!! Will scan URL as an attachment file!")
+                            fileAttachmentUrls[url] = os.path.basename(url).split('?')[0]
                         else:
-                            if url.startswith("https://cdn.discordapp.com/attachments/"):
-                                print(f"URL is a Discord attachment!!! Will scan URL as an attachment file!")
-                                fileAttachmentUrls[url] = os.path.basename(url).split('?')[0]
-                            else:
-                                resolvedUrls.append(url)
-                except Exception as error:
-                    print(f"Can not access URL {url}\nError: {error}")
-                    logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Error {error}\n"
-                    await message.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
+                            resolvedUrls.append(url)
+            except Exception as error:
+                print(f"Can not access URL {url}\nError: {error}")
+                logMessage += f"URL SCAN SUMMARY: Can not retrieve URL {url} - Error {error}\n"
+                await message.reply(f"Cyberbot can not scan URL {url}", suppress_embeds=True)
+
     return resolvedUrls, fileAttachmentUrls, logMessage, True
 
 
@@ -3018,6 +3008,9 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                 URLs, fileAttachmentUrls, logMessage, continueScan = await processingUrls(URLs, message, logMessage, isSilent)
                 if not continueScan:
                     await logScanSession(logMessage)
+                else:
+                    if not URLs:
+                        await message.reply("The URL(s) is clean!")
 
                 """VirusTotal URL scan"""
                 for url in URLs:
@@ -3455,8 +3448,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                         if GeminiScanResult.startswith(("True", "true")):
                                             flaggedMalicious, LLModel, LLMResult = True, GEMINIMODEL, GeminiScanResult
                                         elif GeminiScanResult == "MAXIMUM TOKEN LIMIT":
-                                            print(
-                                                f"File too large for Gemini {GEMINIMODEL} to scan. Proceed to scan by small chunk...")
+                                            print(f"File too large for Gemini {GEMINIMODEL} to scan. Proceed to scan by small chunk...")
                                             flaggedMalicious, GeminiScanResult = await partialLLMSCAT(filepath, "Gemini")
                                             if flaggedMalicious:
                                                 LLModel, LLMResult = GEMINIMODEL, GeminiScanResult
