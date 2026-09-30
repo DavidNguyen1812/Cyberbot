@@ -718,7 +718,8 @@ def txtToPDFConversion(txtFile: str, outputPDFPath: str):
     try:
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_author("Arial", size=12)
+        pdf.set_author("Cyberbot")
+        pdf.set_font("Arial", size=12)
         decodedContent = txtFile.encode("latin-1", errors="replace").decode("latin-1")
         pdf.multi_cell(0, 10, decodedContent)
         pdf.output(outputPDFPath)
