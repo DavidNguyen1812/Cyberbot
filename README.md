@@ -630,8 +630,8 @@ Each URL is resolved and validated prior to submission to VirusTotal:
 
 | URL Type | Handling |
 |----------|----------|
-| **Klipy GIF URLs** (`klipy.com/gifs/`) | Resolved to the underlying direct GIF URL via Klipy API |
-| **Tenor GIF URLs** (`tenor.com/view`) | Resolved to the underlying direct GIF URL via Tenor API |
+| **Klipy GIF URLs** (`klipy.com/gifs/`) | Verify GIF URL authenticity via Klipy API |
+| **Tenor GIF URLs** (`tenor.com/view`) | Verify GIF URL authenticity via Tenor API |
 | **Standard URLs** | Validated via HTTP HEAD/GET request; URLs returning `4xx` status codes are rejected |
 
 Unresolvable or inaccessible URLs are reported to the channel and excluded from further scanning.
