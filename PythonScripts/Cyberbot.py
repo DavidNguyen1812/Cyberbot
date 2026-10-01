@@ -1918,7 +1918,7 @@ def ghidraDecompile(filepath: str, mountPoint: str, filename: str) -> str:
     cmd = [
         GHIDRAHEADLESS,  # Calling the Ghidra analyzeHeadless program
         GHIDRAPROJECTPATH,  # Ghidra project folder to create a temp project
-        GHIDRAPROJECTNAME,  # Ghidra project name
+        f"{random.randint(0,100000000)}{GHIDRAPROJECTNAME}",  # Ghidra project name
         "-import", filepath,  # Importing the binary file to be decompiled
         "-scriptPath", GHIDRASCRIPTPATH, # The directory that contain the Python script contains the decompilation instructions to be executed by Ghidrathon
         "-postScript", "GhidraDecompile.py", outputFile, # The name of the Python script contains the decompilation instructions
