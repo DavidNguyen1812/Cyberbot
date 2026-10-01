@@ -3424,7 +3424,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                                     print(
                                         f"Found script file: {filename} | Type: {fileExt} | Size: {fileSize} bytes | From path {filepath}")
                                     print(f"Converting script file {filename} to PDF...")
-                                    pdfPath = filepath.replace(".txt", ".pdf")
+                                    pdfPath = filepath.split('.')[0] + ".pdf"
                                     await asyncio.to_thread(txtToPDFConversion,fileBytesContent.decode("utf-8", errors="replace"), pdfPath)
 
                                     flaggedMalicious = False
