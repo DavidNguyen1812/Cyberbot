@@ -15,10 +15,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
     :param manualFileAttachment: The file attachment user upload via /manual_malware_scan command
     :return: None
     """
-    if manualScan:
-        if message.user == Cyberbot.user or str(message.channel) == "Direct Message with Unknown User":
-            return
-    else:
+    if not manualScan:
         if message.author == Cyberbot.user or str(message.channel) == "Direct Message with Unknown User":
             return
     if isEdit:
@@ -83,6 +80,13 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
     if message.channel.id in CyberBotConfigData["Non-monitoring-Channels"][guildId] and not manualScan:
         logMessage += ("## Server Channel Outside Scan Scope\n"
                        "Cyberbot detected the message but the channel is in the exclusion list for this server, so no scan is done!\n\n---\n\n")
+        await logScanSession(logMessage)
+        return
+
+    """Checking if Cyberbot automation mode for the server is disable"""
+    if CyberBotConfigData["Automation-Mode"][guildId] == "False":
+        logMessage += ("## Cyberbot Automation Mode Disable\n"
+                       "Cyberbot detected the message but the current Cyberbot configuration for this server disable automation scanning!\n\n---\n\n")
         await logScanSession(logMessage)
         return
 
