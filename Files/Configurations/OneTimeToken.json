@@ -1,4 +1,5 @@
 {
     "Password Reset Token": {},
-    "Email Confirmation Token": {}
+    "Email Confirmation Token": {},
+    "Account Delete Confirmation Token": {}
 }
