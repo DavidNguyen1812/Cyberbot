@@ -9,8 +9,6 @@ A Python-based security scanner designed for continuous, automated threat monito
 
 - **AI-Assisted Static Code Analysis** Dual-model static analysis pipeline leveraging OpenAI and Google Gemini to identify obfuscated logic, malicious payloads, and code patterns indicative of exploitation attempts. Partial analysis of file chunks for larger file that exceed the model context window.
 
-- **Vulnerability Pattern Matching** Command-based source-level vulnerability scanning with Semgrep, applied against extracted scripts and code snippets to surface known CVE patterns and insecure coding practices.
-
 - **Phishing & Credential Risk Classification** Command-based Pre-trained Encoder-Transformer model for classification of phishing content and password strength assessment, providing probabilistic threat scoring on suspicious messages.
 
 - **Local Hash Signature Database** Persistent JSON-based hash signature store for instantaneous IOC (Indicator of Compromise) lookups against previously identified threats, thus, eliminating repeated scans and wasted resources.
@@ -37,19 +35,34 @@ A Python-based security scanner designed for continuous, automated threat monito
 │   │   ├── LLMMonthlyUsage.csv                   # Keep track of the cost of using external LLM model Gemini and OpenAi using input/output token metrics monthly 
 │   │   └── LLMYearlyUsage.csv                    # Keep track of the cost of using external LLM model Gemini and OpenAi using input/output token metrics yearly
 │   ├── Logs
-│   │   ├── CyberBotCronTaskLog.txt               # Logging Cyberbot cron job events (e.g Updating LLM Usage chart daily, cleaning DMs with user that have admin accounts, .etc.)
-│   │   ├── CyberBotDiscordCommandsLog.txt        # Logging all the events a user execute Cyberbot application commands from Discord
-│   │   ├── CyberbotURLAndFileScanLog.txt         # Logging all the events Cyberbot scanning file or URL
-│   │   └── OpenAIandGeminiSCATResults.txt        # Logging all SCAT results from OpenAI and Gemini
+│   │   ├── CyberBotCronTaskLog.md                # Logging Cyberbot cron job events (e.g Updating LLM Usage chart daily, cleaning DMs with user that have admin accounts, .etc.)
+│   │   ├── CyberBotDiscordCommandsLog.md         # Logging all the events a user execute Cyberbot application commands from Discord
+│   │   └── CyberbotURLAndFileScanLog.md          # Logging all the events Cyberbot scanning file or URL
 │   └── MLModels                                  # Stored all pre-trained Encoder-Transformers for phishing content detection and weak password
 │       ├── CPU                                   # Models trained using a CPU                                  
 │       └── MPS                                   # Models trained using Mac MPS
 └── PythonScripts
-    ├── GhidraDecompileScript                    
-    │   └── GhidraDecompile.py                    # Instructions for Ghidrathon to disassemble a binary file
-    ├── Cyberbot.py                               # Cyberbot Source Code
-    ├── EncoderTransformers.py                    # The encoder-transformer architecture of the customized ML models
-    └── env                                       # Change to .env, this file is where you store the important file paths and APIs to run Cyberbot
+    ├── env                                       # Change to .env, this file is where you store the third-party APIs to run Cyberbot
+    ├── Cyberbot.py                               # Main script to run, this script will call other modules and enable Cyberbot to function
+    ├── CyberBotAdminCommandsModule.py
+    ├── CyberBotAnalyticsModule.py
+    ├── CyberBotArchiveDiskImageScanModule.py
+    ├── CyberBotAttachmentScanModule.py
+    ├── CyberBotEncoderTransformersModule.py
+    ├── CyberBotEventHandlersModule.py
+    ├── CyberBotFileUtilitiesModule.py
+    ├── CyberBotGhidraDecompileModule.py
+    ├── CyberBotGhidraIntegrationModule.py
+    ├── CyberBotHashDatabaseModule.py
+    ├── CyberBotLLMScanModule.py
+    ├── CyberBotOtherCommandsModule.py
+    ├── CyberBotRuntimeModule.py
+    ├── CyberBotScanOrchestrationModule.py
+    ├── CyberBotScheduledTasksModule.py
+    ├── CyberBotSecurityUtilitiesModule.py
+    ├── CyberBotURLPreprocessingModule.py
+    ├── CyberBotURLScanModule.py   
+    └── CyberBotVirusTotalModule.py
 ```
 
 # Required Python Dependencies, System Binaries and API
@@ -58,39 +71,38 @@ A Python-based security scanner designed for continuous, automated threat monito
 
 | Python Dependency | Version | Source |
 |---|---|---|
-| discord-py | `== 2.5.2` | https://github.com/Rapptz/discord.py |
-| python-dotenv | `== 1.2.2` | https://github.com/theskumar/python-dotenv |
-| filetype | `== 1.2.0` | https://github.com/h2non/filetype.py |
-| openai | `== 2.38.0` | https://github.com/openai/openai-python |
-| python-magic | `== 0.4.27` | http://github.com/ahupp/python-magic |
-| rarfile | `== 4.2` | https://github.com/markokr/rarfile |
-| aiofiles | `== 25.1.0` | https://github.com/Tinche/aiofiles |
-| aiocsv | `== 1.4.0` | https://github.com/MKuranowski/aiocsv |
-| numpy | `== 2.4.4` | https://numpy.org |
-| pandas | `== 3.0.2` | https://pandas.pydata.org |
-| matplotlib | `== 3.10.8` | https://matplotlib.org |
-| fpdf | `== `1.7.2` | https://github.com/reingart/pyfpdf |
-| google-genai | `== 2.7.0` | https://github.com/googleapis/python-genai |
-| transformers | `== 5.7.0` | https://github.com/huggingface/transformers |
-| torch | `== `2.11.0` | https://pytorch.org |
-| email-validator | `== `2.3.0` | https://github.com/JoshData/python-email-validator |
+| discord-py | `>= 2.5.2` | https://github.com/Rapptz/discord.py |
+| python-dotenv | `>= 1.2.2` | https://github.com/theskumar/python-dotenv |
+| filetype | `>= 1.2.0` | https://github.com/h2non/filetype.py |
+| openai | `>= 2.38.0` | https://github.com/openai/openai-python |
+| python-magic | `>= 0.4.27` | http://github.com/ahupp/python-magic |
+| rarfile | `>= 4.2` | https://github.com/markokr/rarfile |
+| aiofiles | `>= 25.1.0` | https://github.com/Tinche/aiofiles |
+| aiocsv | `>= 1.4.0` | https://github.com/MKuranowski/aiocsv |
+| numpy | `>= 2.4.4` | https://numpy.org |
+| pandas | `>= 3.0.2` | https://pandas.pydata.org |
+| matplotlib | `>= 3.10.8` | https://matplotlib.org |
+| fpdf | `>= `1.7.2` | https://github.com/reingart/pyfpdf |
+| google-genai | `>= 2.7.0` | https://github.com/googleapis/python-genai |
+| transformers | `>= 5.7.0` | https://github.com/huggingface/transformers |
+| torch | `>= `2.11.0` | https://pytorch.org |
+| email-validator | `>= `2.3.0` | https://github.com/JoshData/python-email-validator |
+| bcrypt | `>= `5.0.0` | https://pypi.org/project/bcrypt/ |
 
 | System Binary | Version | Source |
 |---|---|---|
-| semgrep | `>= 1.157.0` | https://semgrep.dev |
-| 7z | `>= 17.05` | https://www.7-zip.org/download.html |
+| 7zz | `>= 17.05` | https://www.7-zip.org/download.html |
 | unar | `>= 1.10.7` | https://www.kali.org/tools/unar/ |
 | qemu-utils | `>= 10.0.2` | https://www.qemu.org/download/ |
-| hdiutil (Required if the OS Cyberbot running on is MacOS) | built-in | https://ss64.com/mac/hdiutil.html |
 
 | API Key | Source |
 |---|---|
 | Discord API key | https://docs.discord.com/developers/reference |
 | Klipy API Key | https://klipy.com |
-| Tenor API Key | https://tenor.com/gifapi/documentation |
 | OpenAI API Key | https://openai.com/api/ |
 | Google Gemini API Key | https://ai.google.dev/gemini-api/docs |
 | Virus Total API Key | https://docs.virustotal.com/reference/overview |
+| ScrapeOPS API Key | https://scrapeops.io |
 
 # System Binaries Installation Guide
 
@@ -104,50 +116,9 @@ This guide provides step-by-step installation instructions for the external syst
 
 ## Table of Contents
 
-- [Semgrep](#semgrep)
 - [Ghidra & Ghidrathon](#ghidra--ghidrathon)
   - [Linux Installation](#linux-installation)
   - [macOS Installation](#macos-installation)
-
----
-
-## Semgrep
-
-**Description:** Semgrep is an open-source, Python-based static analysis engine used by Cyberbot to perform vulnerability scanning on file attachments submitted via the `/semgrep_vulnerability_scan` command.
-
----
-
-### Linux
-
-**1. Install Semgrep via pip:**
-```bash
-pip install semgrep
-```
-
-**2. Create symbolic links to expose the Semgrep binaries system-wide:**
-```bash
-sudo ln -s ~/.local/bin/semgrep /usr/bin/semgrep
-sudo ln -s ~/.local/bin/pysemgrep /usr/bin/pysemgrep
-```
-
-**3. Verify the installation:**
-```bash
-semgrep --version
-```
-
----
-
-### macOS
-
-**1. Install Semgrep via Homebrew:**
-```bash
-brew install semgrep
-```
-
-**2. Verify the installation:**
-```bash
-semgrep --version
-```
 
 ---
 
@@ -313,7 +284,6 @@ mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra \
 
 | Binary | Linux | macOS | Purpose |
 |--------|-------|-------|---------|
-| **Semgrep** | `pip install semgrep` | `brew install semgrep` | Static vulnerability scanning |
 | **Oracle Java** | Manual JDK zip extraction | Official macOS installer | Ghidra runtime dependency |
 | **Ghidra** | Manual zip extraction + `buildNatives` | Manual zip extraction | Binary disassembly & decompilation |
 | **Ghidrathon** | Manual configuration via `ghidrathon_configure.py` | Manual configuration via `ghidrathon_configure.py` | Python 3 scripting bridge for Ghidra |
@@ -330,7 +300,8 @@ mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra \
 |---|---|---|---|
 | `/create_admin_account` | Registers a new administrator account with Cyberbot, requiring a valid email address for identity verification and registration confirmation | Any server member | Each administrator account is uniquely bound to a single user and email address |
 | `/confirm_admin_account` | Confirm the registration of a new administrator account with Cyberbot, requiring a valid email address and email confimration OTP code for final identity verification | Any server member | User must obtain the valid email confirmation code from invoking the /create_admin_account |
-| `/remove_admin_account` | Permanently deregisters an existing administrator account from Cyberbot, requiring valid email address and password confirmation for identity verification prior to account removal | Any user with a registered administrator account | Must authenticate to confirm the deregistration process |
+| `/remove_admin_account` | Requesting a confirm account deletion token sent to the email address that the account registered with, requiring user to authenticate with valid email address and password for identity verification | Any user with a registered administrator account | Must authenticate to obtain the code |
+| `/confirm_delete_admin_account` | Permanently deregisters an existing administrator account from Cyberbot, requiring a valid email and confirm code to authenticate prior to account removal | Any user with a registered administrator account | Must provide a valid confirm code to confirm the deregistration process |
 | `/admin_log_in` | Initiates an authenticated 1-hour administrative session, granting access to Cyberbot's server configuration and management controls | Any user with a registered administrator account | Requires administrator access privileges authorized by the server owner |
 | `/admin_log_out` | Terminates the current active administrative session | Any user with a registered administrator account | The user must hold server owner-authorized administrator privileges and have an active open session |
 | `/request_password_reset_token` | Requests a time-limited (3-minute) password reset token delivered to the account's registered email address | Any user with a registered administrator account | Token issuance is blocked if the account password has not satisfied the minimum password age policy of 3 hours, or if the account is currently locked |
@@ -338,11 +309,10 @@ mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra \
 | `/adding_admins` | Grants a server member administrative access, enabling them to view and modify Cyberbot's server configuration settings | Server Owner only | The designated server member must have an existing registered administrator account |
 | `/removing_admins` | Revokes a server member's administrative access privileges | Server Owner only | The designated server member must currently hold active administrative access |
 | `/viewing_cyberbot_configuration` | Retrieves and displays the current Cyberbot server configuration settings in read-only mode | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
-| `/cyberbot_config` | Modifies and applies changes to the current Cyberbot server configuration settings | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
-| `/non_monitoring_channel` | Adds or removes the current channel from Cyberbot's real-time monitoring exclusion list | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
-| `/list_supported_formats` | Retrieves and displays a comprehensive list of all file formats and content categories supported by Cyberbot's scanning and analysis engines | Any user with a registered administrator account | Requires server owner-authorized administrator privileges |
+| `/cyberbot_config` | Modifies and applies changes to the current Cyberbot server configuration settings | Any user with a registered administrator account | Requires server owner-authorized administrator privileges and have an active open session |
+| `/non_monitoring_channel` | Adds or removes the current channel from Cyberbot's real-time monitoring exclusion list | Any user with a registered administrator account | Requires server owner-authorized administrator privileges and have an active open session |
+| `/list_supported_formats` | Retrieves and displays a comprehensive list of all file formats and content categories supported by Cyberbot's scanning and analysis engines | Any user with a registered administrator account | Requires server owner-authorized administrator privileges and have an active open session |
 | `/get_list_of_accessible_servers` | Retrieves and displays a complete list of servers for which the authenticated user holds active administrative access privileges | Any user with a registered administrator account | N/A |
-| `/semgrep_vulnerability_scan` | Initiates a static vulnerability assessment against the target codebase using the Semgrep analysis engine to identify known security weaknesses and insecure code patterns | Any server member | N/A |
 | `/phishing_email_scan` | Submits content for phishing threat classification using a pre-trained Encoder-Transformer model, providing a probabilistic threat verdict for suspicious messages and attachments | Any server member | N/A |
 | `/manual_malware_scan` | Performs an on-demand malware analysis of a submitted file, inspecting for malicious attributes, suspicious indicators, and known threat signatures | Any server member | N/A |
 | `/checking_file_true_format` | Determines the true file format of a submitted file by inspecting its magic bytes, identifying potential file extension spoofing or format mismatch attempts | Any server member | N/A |
@@ -353,18 +323,19 @@ mv /Applications/ghidra_x.x.x_PUBLIC/Ghidra/Features/PyGhidra \
 
 ## Overview
 
-An administrator account is a fundamental security requirement for managing Cyberbot's server configuration settings. To register, a user must provide a valid email address and invoke the `/create_admin_account` and `/confirm_admin_account` application command.
+An administrator account is a fundamental security requirement for managing Cyberbot's server configuration settings. To register, a user must provide a valid email address and invoke the `/create_admin_account` and `/confirm_admin_account` application command. 
 
 Upon successful registration, an account record will be persisted within **CyberBotConfig.json** adhering to the following schema:
 
 ```json
 {
     "User ID"                      : "<User Discord ID>",
-    "User Email"                   : "<User Email Address>",
-    "User Credential"              : "<SHA-512 Hash of the user password>",
+    "User Email"                   : "<SHA-512 Hash of Email Address>",
+    "User Salt"                    : "<A unique bcrypt salt value>",
+    "User Credential"              : "<Bcrypt Hash of the user password and salt value>",
     "Credential Minimum Age"       : "<Enforces the minimum password age policy>",
     "Credential Expiration Age"    : "<Enforces the maximum password age policy>",
-    "Previous Credentials Used"    : ["<List of SHA-512 hashes of previously used passwords to prevent credential reuse>"],
+    "Previous Credentials Used"    : ["<List of BCrypt hashes of previously used passwords to prevent credential reuse>"],
     "Current Admin Session Period" : {"<Dictionary tracking active administrative sessions per server>"},
     "Last Time Logged In"          : "<DateTime of the most recent successful administrator authentication>",
     "Current Account Locked Out Period" : "<Remaining duration of the current account lockout, if applicable>",
@@ -383,7 +354,7 @@ Upon successful registration, an account record will be persisted within **Cyber
 
 Possession of a registered administrator account does not implicitly grant administrative privileges within a Discord server. Access must be explicitly authorized by the server owner via the `/adding_admins` command and may be revoked at any time via the `/removing_admins` command. This design enforces a **Discretionary Access Control (DAC)** model, ensuring that access delegation remains under the authority of the server owner.
 
-> **Note:** Server owners with a registered administrator account are automatically granted administrative access across all Discord servers they own — no additional authorization step is required.
+> **Note:** Server owners with a registered administrator account are automatically granted administrative access across all Discord servers they own — no additional authorization step is required. The server owner still have to authenticate to obtain a valid admin session to configure Cyberbot.
 
 ---
 
@@ -394,11 +365,11 @@ All administrator account passwords must conform to the following requirements:
 - Minimum length of **12 characters**
 - Must contain **mixed-case ASCII letters and digits**
 - Must include at least one special character from the following set: `!@#$%&*_+=`
-- Maximum password age of **6 months** — upon expiration, Cyberbot will dispatch an automated email reminder to the account owner prompting a credential update
+- Maximum password age of **6 months**
 
-Passwords are stored as **SHA-512 hashes**, salted using the user's Discord ID to ensure uniqueness and resistance against precomputed attacks.
+Passwords are stored as **BCrypt hashes**, salted to ensure uniqueness and resistance against precomputed attacks.
 
-**Seucrity Note**: Email addresses are stored **Plainly** due to Cyberbot email automation system need the account email to be able to send password expiration notification, user admin access removal, ..etc..
+Email addresses are stored **SHA-512 hashes** 
 
 ---
 
@@ -432,7 +403,7 @@ When a user elects to define their own password, the submitted credential underg
 
 All users, including server owners, must authenticate to establish a **1-hour administrative session** before gaining read or write access to Cyberbot's configuration. Administrative sessions are **server-scoped** — a session authenticated for one Discord server does not confer access to any other server.
 
-Upon **7 consecutive failed authentication attempts**, the account will be subjected to an automatic **3-hour lockout**, and an automated security notification will be dispatched to the account's registered email address.
+Upon **7 consecutive failed authentication attempts**, the account will be subjected to an automatic **3-hour lockout**, and an automated security notification will be dispatched to the account's user direct message with Cyberbot.
 
 ---
 
@@ -470,7 +441,7 @@ Non-Monitor-Channels
 
 ## Account Deregistration
 
-Users may permanently deregister their administrator account by providing the registered email address and current account password for identity verification. Account deletion is subject to the same authentication lockout policy — **7 consecutive failed attempts** will result in a **3-hour account lockout** before the operation may be retried.
+Users may permanently deregister their administrator account by providing the registered email address and current account password for identity verification with command `/remove_admin_account` to obtain a confirm code via email. Users then must provide the valid confirm code and the email address that it sent to with `/confirm_delete_admin_account`. Account deletion is subject to the same authentication lockout policy — **7 consecutive failed attempts** will result in a **3-hour account lockout** before the operation may be retried.
 
 # Event Logging
 
@@ -478,13 +449,13 @@ Users may permanently deregister their administrator account by providing the re
 
 ## Overview
 
-Cyberbot maintains four dedicated plain-text (`.txt`) log files, each scoped to a distinct operational domain. These logs provide a comprehensive and auditable record of all system activity, supporting incident response, forensic analysis, and operational monitoring.
+Cyberbot maintains three dedicated markdown (`.md`) log files, each scoped to a distinct operational domain. These logs provide a comprehensive and auditable record of all system activity, supporting incident response, forensic analysis, and operational monitoring.
 
 ---
 
 ## Log Files
 
-### 1. `CyberBotCronTasksLog.txt`
+### 1. `CyberBotCronTasksLog.md`
 **Purpose:** Records all events associated with Cyberbot's scheduled background tasks and automated maintenance operations.
 
 Captured events include:
@@ -492,13 +463,11 @@ Captured events include:
 | Event | Description |
 |-------|-------------|
 | **One-Time Token Expiry Sweep** | Periodic inspection and invalidation of expired one-time tokens stored in `/Configurations/OneTimeToken.json` |
-| **Password Expiry Enforcement** | Automated detection and flagging of administrator account passwords that have exceeded the maximum password age policy |
 | **External LLM Usage Metrics Update** | Periodic recording of aggregated usage statistics for external language model API calls, including total input/output token consumption, cumulative cost, and total successful model request counts |
-| **DM Chat Cleanup** | Daily purge of direct message chat history with users holding active administrator accounts |
 
 ---
 
-### 2. `CyberBotDiscordCommandsLog.txt`
+### 2. `CyberBotDiscordCommandsLog.md`
 **Purpose:** Records all invocations of Cyberbot's application commands across monitored Discord servers.
 
 Captured events include:
@@ -512,7 +481,7 @@ Captured events include:
 
 ---
 
-### 3. `CyberbotURLAndFileScanLog.txt`
+### 3. `CyberbotURLAndFileScanLog.md`
 **Purpose:** Records all file attachment and URL analysis events performed by Cyberbot, encompassing both automated real-time scanning and on-demand manual scans.
 
 Captured events include:
@@ -526,27 +495,13 @@ Captured events include:
 
 ---
 
-### 4. `OpenAIAndGeminiSCATResults.txt`
-**Purpose:** Archives the full results of static code analysis (SCAT) performed on script file attachments by external large language model providers — Google Gemini and OpenAI GPT.
-
-Captured events include:
-
-| Event | Description |
-|-------|-------------|
-| **Static Code Analysis Report** | Complete analysis output returned by the LLM provider for each submitted script file |
-| **Threat Indicators** | Identified obfuscated logic, suspicious code patterns, and potential exploitation techniques flagged during analysis |
-| **Model Attribution** | Records which model (Google Gemini or OpenAI GPT) produced each analysis result, along with the associated timestamp and token usage |
-
----
-
 ## Log File Summary
 
 | Log File | Scope | Primary Audience |
 |----------|-------|-----------------|
-| `CyberBotCronTasksLog.txt` | Scheduled tasks & background maintenance | System Administrator |
-| `CyberBotDiscordCommandsLog.txt` | Application command invocations & access control | Security Auditor / Server Owner |
-| `CyberbotURLAndFileScanLog.txt` | File & URL threat analysis results | Security Analyst / Incident Responder |
-| `OpenAIAndGeminiSCATResults.txt` | LLM-powered static code analysis reports | Security Analyst / Malware Researcher |
+| `CyberBotCronTasksLog.md` | Scheduled tasks & background maintenance | System Administrator |
+| `CyberBotDiscordCommandsLog.md` | Application command invocations & access control | Security Auditor / Server Owner |
+| `CyberbotURLAndFileScanLog.md` | File & URL threat analysis results | Security Analyst / Incident Responder |
 
 ---
 
@@ -631,13 +586,12 @@ Each URL is resolved and validated prior to submission to VirusTotal:
 | URL Type | Handling |
 |----------|----------|
 | **Klipy GIF URLs** (`klipy.com/gifs/`) | Verify GIF URL authenticity via Klipy API |
-| **Tenor GIF URLs** (`tenor.com/view`) | Verify GIF URL authenticity via Tenor API |
 | **Standard URLs** | Validated via HTTP HEAD/GET request; URLs returning `4xx` status codes are rejected |
 
 Unresolvable or inaccessible URLs are reported to the channel and excluded from further scanning.
 
 ### Step 2.4 — Concurrent Scan Deduplication
-Before submitting a URL to VirusTotal, Cyberbot computes the SHA-256 hash of the URL and checks the `CURRENTSCANOPERATION` registry. If an identical URL is already being processed by a concurrent coroutine, the current coroutine suspends and waits for the in-progress scan to complete before proceeding.
+Before submitting a URL to VirusTotal, Cyberbot computes the SHA-256 hash of the URL and checks the scan hash lock registry. If an identical URL is already being processed by a concurrent coroutine, the current coroutine suspends and waits for the in-progress scan to complete before proceeding.
 
 ### Step 2.5 — Local Hash Signature Lookup
 The URL SHA-256 hash is cross-referenced against Cyberbot's local scan history:
@@ -651,6 +605,7 @@ Unknown URLs are submitted to the VirusTotal API for multi-engine analysis:
 
 - **Malicious verdict** (`malicious count > 0`) → URL is flagged, added to the local malicious hash store, and the message is deleted.
 - **Clean verdict** (`malicious count = 0`) → URL is added to the local clean hash store and reported as safe.
+- **Unverified verdict** (`suspicious count > 0`) -> Reported to the channel; no hash record is created.
 - **Scan error** → Reported to the channel; no hash record is created.
 
 ---
