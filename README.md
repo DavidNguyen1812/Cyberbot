@@ -507,275 +507,465 @@ Captured events include:
 
 > **Note:** All log files are append-only and retained indefinitely to ensure a complete and tamper-evident audit trail. Administrators are advised to periodically archive and back up log files to prevent data loss.
 
-# Real-Time Threat Analysis Pipeline
+# CyberBot — Real-Time Threat Analysis Pipeline
+
+**Discord security automation · Modular Python architecture · Multi-engine file and URL analysis**
+
+CyberBot is an event-driven Discord security bot that examines URLs and file attachments posted in monitored server channels. It combines URL redirect and SSRF inspection, SHA-256 signature history, VirusTotal, recursive archive/disk-image analysis, Ghidra decompilation, and OpenAI/Google Gemini-assisted static analysis (SCAT) to produce a scan verdict and an audit log.
+
+> **Security boundary:** A `CLEAN` result is a conclusion from the checks that completed, **not a guarantee that a URL or file is harmless**. Unsupported formats, encrypted or inaccessible content, incomplete snapshot inspection, API failures, and inconclusive analysis should not be interpreted as safe.
 
 ---
 
-## Overview
+## 1. Architecture and project structure
 
-Cyberbot's real-time threat analysis pipeline is an automated, event-driven security scanning system that activates upon detection of any file attachment or URL submitted within a monitored Discord server channel. The pipeline performs a layered, multi-engine analysis — encompassing hash signature lookups, VirusTotal multi-engine scanning, archive bomb detection, binary reverse engineering, and LLM-assisted static code analysis — before issuing a final threat verdict.
+`Cyberbot.py` is the small entry point. Features are implemented as normal, importable Python modules. `CyberBotRuntimeModule.py` provides common configuration, API clients, locks, semaphores, and scan-result types; specialist modules import shared objects and their cross-module dependencies explicitly.
 
----
-
-## Pipeline Trigger Conditions
-
-The real-time pipeline is activated when **all** of the following conditions are satisfied:
-
-| Condition | Requirement |
-|-----------|-------------|
-| **Message Author** | Must not be Cyberbot itself |
-| **Channel Type** | Must not be a Direct Message channel |
-| **Automation-Mode** | Must be set to `True` for the origin server |
-| **Channel Exclusion** | The origin channel must not be listed in `Non-Monitor-Channels` |
-| **Content** | Message must contain at least one URL or file attachment |
-
-If `Automation-Mode` is `False`, the event is logged with a notation that automated scanning is disabled and no analysis is performed.
-
----
-
-## Pipeline Architecture
-
-```
-Message Received
-       │
-       ▼
-┌─────────────────────────────┐
-│   Pre-Flight Validation     │  ── Ignore bots, DMs, excluded channels
-└────────────┬────────────────┘
-             │
-             ▼
-┌─────────────────────────────┐
-│   Server Config Bootstrap   │  ── Initialise server config defaults if new server
-└────────────┬────────────────┘
-             │
-      ┌──────┴──────┐
-      ▼             ▼
- URL Pipeline   File Pipeline
+```text
+└── PythonScripts/
+    ├── Cyberbot.py
+    ├── CyberBotRuntimeModule.py
+    ├── CyberBotScanOrchestrationModule.py
+    ├── CyberBotEventHandlersModule.py
+    ├── CyberBotAttachmentScanModule.py
+    ├── CyberBotURLScanModule.py
+    ├── URLPreprocessingModule.py
+    ├── CyberBotVirusTotalModule.py
+    ├── CyberBotHashDatabaseModule.py
+    ├── ArchiveDiskImageScanModule.py
+    ├── CyberBotGhidraIntegrationModule.py
+    ├── GhidraDecompile.py
+    ├── CyberBotLLMScanModule.py
+    ├── CyberBotFileUtilitiesModule.py
+    ├── CyberBotSecurityUtilitiesModule.py
+    ├── CyberBotAdminCommandsModule.py
+    ├── CyberBotOtherCommandsModule.py
+    ├── CyberBotScheduledTasksModule.py
+    ├── CyberBotAnalyticsModule.py
+    └── EncoderTransformers.py
 ```
 
----
+*This shows the directories and paths expected by the code, not a promise that the distribution creates every configuration, log, or model file.*
 
-## Stage 1 — Pre-Flight Validation & Server Configuration Bootstrap
+### Module responsibilities
 
-Before any scanning begins, Cyberbot performs the following initialization checks:
+| Python file | Primary responsibility |
+|---|---|
+| `Cyberbot.py` | Imports the feature modules and calls `Cyberbot.run(DISCORD_BOT_TOKEN)` when executed directly. |
+| `CyberBotRuntimeModule.py` | Environment checks; project paths; configuration; shared Discord bot, API/model clients, locks, semaphores, tokenizers, classifiers, and result types. |
+| `CyberBotEventHandlersModule.py` | `on_ready`, `on_message`, `on_message_edit`, `on_member_remove`, and `/manual_malware_scan`. |
+| `CyberBotScanOrchestrationModule.py` | `CyberBotScan()`; URL/file task coordination, message verdicts, progress, and session logging. |
+| `URLPreprocessingModule.py` | Redirect-chain and SSRF inspection, GIF validation, Discord CDN URL detection; owns the shared `Cyberbot` instance and its HTTP session. |
+| `CyberBotURLScanModule.py` | `scanOneURL()`; per-URL deduplication, local hash history, and VirusTotal decisions. |
+| `CyberBotAttachmentScanModule.py` | `scanOneAttachment()` and `analyzeAttachmentContents()`; attachment intake, extraction, VT, Ghidra, and SCAT coordination. |
+| `CyberBotFileUtilitiesModule.py` | Attachment streaming/hash helpers, per-hash lock, format checks, and Discord scan/progress messages. |
+| `CyberBotVirusTotalModule.py` | VirusTotal HTTP requests, retries, URL scans, and file scans. |
+| `CyberBotHashDatabaseModule.py` | Clean/malicious SHA-256 history and scan-session logs. |
+| `ArchiveDiskImageScanModule.py` | Recursive archive/disk-image handling, size limits, duplicate detection, snapshot-state inspection, manifest, Markdown tree. |
+| `CyberBotGhidraIntegrationModule.py` | Launches Ghidra's headless decompilation workflow. |
+| `GhidraDecompile.py` | Script executed **inside Ghidra/Ghidrathon**; not a normal Python module to import from the bot. |
+| `CyberBotLLMScanModule.py` | OpenAI and Gemini SCAT, retry handling, partial-file analysis. |
+| `CyberBotSecurityUtilitiesModule.py` | Email, password/security utilities, application-command logging, text-to-PDF conversion. |
+| `CyberBotAdminCommandsModule.py` | Administrative account, session, role, password, and server-configuration commands. |
+| `CyberBotOtherCommandsModule.py` | Supported formats, accessible servers, true file format, and phishing-email commands. |
+| `CyberBotScheduledTasksModule.py` | Token/credential checks, role checks, and daily usage reports. |
+| `CyberBotAnalyticsModule.py` | LLM usage CSVs, costs, and charts. |
+| `EncoderTransformers.py` | BERT/Longformer-based local classifier models and prediction functions. |
 
-1. **Bot Self-Message Guard** — Discards any message originating from Cyberbot itself to prevent recursive processing.
-2. **Direct Message Guard** — Discards messages received via Direct Message channels, which are outside the scope of server monitoring.
-3. **Server Configuration Bootstrap** — If the origin server is newly detected, Cyberbot initializes its configuration defaults:
-   - `Non-Monitor-Channels` → Empty exclusion list
-   - `Silent-Mode` → `False` (verbose mode enabled)
-   - `Automation-Mode` → `True` (real-time scanning enabled)
-   - The updated configuration is persisted to `CyberBotConfig.json`.
-4. **Channel Exclusion Check** — If the origin channel is present in the server's `Non-Monitor-Channels` list, the message is immediately discarded and no scanning is performed.
-
----
-
-## Stage 2 — URL Scanning Pipeline
-
-Activated when one or more URLs are detected in the message content.
-
-### Step 2.1 — URL Extraction & Deduplication
-All URLs matching the `https?://` scheme are extracted from the message content via regex pattern matching. Duplicate URLs are removed to prevent redundant scan operations.
-
-### Step 2.2 — Path Traversal Detection
-Each extracted URL is inspected for `../` sequences (URL-decoded) that may indicate a **directory traversal attack** targeting the host web server. Any URL containing such patterns is immediately flagged, the message is deleted, and the event is logged.
-
-### Step 2.3 — URL Resolution & Accessibility Validation
-Each URL is resolved and validated prior to submission to VirusTotal:
-
-| URL Type | Handling |
-|----------|----------|
-| **Klipy GIF URLs** (`klipy.com/gifs/`) | Verify GIF URL authenticity via Klipy API |
-| **Standard URLs** | Validated via HTTP HEAD/GET request; URLs returning `4xx` status codes are rejected |
-
-Unresolvable or inaccessible URLs are reported to the channel and excluded from further scanning.
-
-### Step 2.4 — Concurrent Scan Deduplication
-Before submitting a URL to VirusTotal, Cyberbot computes the SHA-256 hash of the URL and checks the scan hash lock registry. If an identical URL is already being processed by a concurrent coroutine, the current coroutine suspends and waits for the in-progress scan to complete before proceeding.
-
-### Step 2.5 — Local Hash Signature Lookup
-The URL SHA-256 hash is cross-referenced against Cyberbot's local scan history:
-
-- **Known Safe** → Reports the URL as previously verified safe. No VirusTotal API call is made.
-- **Known Malicious** → Reports the URL as previously flagged malicious, deletes the message immediately.
-- **Unknown** → Proceeds to VirusTotal submission.
-
-### Step 2.6 — VirusTotal URL Scan
-Unknown URLs are submitted to the VirusTotal API for multi-engine analysis:
-
-- **Malicious verdict** (`malicious count > 0`) → URL is flagged, added to the local malicious hash store, and the message is deleted.
-- **Clean verdict** (`malicious count = 0`) → URL is added to the local clean hash store and reported as safe.
-- **Unverified verdict** (`suspicious count > 0`) -> Reported to the channel; no hash record is created.
-- **Scan error** → Reported to the channel; no hash record is created.
+**Import behavior:** These are conventional Python imports, not `exec()`-loaded source fragments. All modules use the same initialized runtime objects; importing the main entry point does not itself call `Cyberbot.run()`.
 
 ---
 
-## Stage 3 — File Attachment Scanning Pipeline
+## 2. Processing flow
 
-Activated when one or more file attachments are detected in the message. Each attachment is processed individually and sequentially through the following stages.
-
-### Step 3.1 — Path Traversal Detection
-The attachment filename is inspected for `../` sequences indicative of a **path traversal attack**. Flagged filenames result in immediate message deletion and event logging.
-
-### Step 3.2 — File Size Validation
-The attachment content length is retrieved via HTTP HEAD request. Files exceeding the **300 MB** size threshold are rejected as outside Cyberbot's supported scan size limit.
-
-### Step 3.3 — File Download & True Format Identification
-The attachment is downloaded and its **true file format** is determined by inspecting its **magic bytes** — independent of the declared file extension — to detect potential extension spoofing or format mismatch attempts. The SHA-256 hash of the raw file content is computed for subsequent lookups.
-
-### Step 3.4 — Concurrent Scan Deduplication
-Identical to Step 2.4 — the file SHA-256 hash is checked against the `CURRENTSCANOPERATION` registry to prevent duplicate concurrent scans of the same file.
-
-### Step 3.5 — Local Hash Signature Lookup
-The file SHA-256 hash is cross-referenced against Cyberbot's local scan history:
-
-- **Known Safe** → Reports the file as previously verified safe. No further scanning is performed.
-- **Known Malicious** → Reports the file as previously flagged malicious and deletes the message immediately.
-- **Unknown** → Proceeds through the full scanning pipeline.
-
-### Step 3.6 — Encrypted File Detection
-Files identified as encrypted (based on true file format) are flagged as unscannnable. Cyberbot issues an advisory message recommending the recipient exercise caution, and recommends the file be re-submitted after decryption if it is intended to be legitimate.
-
-### Step 3.7 — Format Scope Validation
-Files with formats outside of Cyberbot's supported scope of analysis are reported as unscannable and excluded from further processing. Supported formats proceed to download and mount point preparation.
-
-### Step 3.8 — VirusTotal File Scan
-The downloaded file is submitted to the VirusTotal API for multi-engine file analysis. The scan result is reported in the following format:
-
-```
-<Malicious> Malicious, <Suspicious> Suspicious, <Harmless> Harmless, <Undetected> Undetected
-```
-
-- **Malicious verdict** (`malicious count > 0`) → File is flagged, added to the local malicious hash store, message is deleted, and temporary files are cleaned up.
-- **Clean verdict** → Pipeline continues to archive/disk image analysis.
-- **Scan error** → Noted in the log; pipeline continues.
-
----
-
-## Stage 4 — Archive & Disk Image Bomb Analysis
-
-Activated when the file is identified as an **archive or disk image format**.
-
-### Step 4.1 — Extraction & Bomb Detection
-The archive or disk image is extracted to a dedicated mount point. The extraction engine inspects for the following threat conditions:
-
-| Threat Condition | Description | Action |
-|-----------------|-------------|--------|
-| **Encrypted Archive** | Archive contains encrypted content that cannot be inspected | Advisory message issued; no hash record created |
-| **Path Traversal Attack** | Extracted file paths contain `../` sequences | Message deleted; flagged as malicious |
-| **Archive/Disk Bomb** | Uncompressed size exceeds **32 GB** threshold | Message deleted; flagged as malicious |
-| **Corrupted Disk Image** | Disk image cannot be successfully parsed or mounted | Reported to channel |
-| **Recursive Archive Bomb** | More than 3 nested duplicate archive/disk files detected | Message deleted; flagged as malicious |
-| **Duplicate Content Bomb** | Excessive duplicate files detected within the compressed content | Message deleted; flagged as malicious |
-
-### Step 4.2 — Uncompressed Content Scanning
-If the archive passes all bomb detection checks, its extracted contents are individually scanned:
-
-1. The uncompressed file structure is enumerated and reported.
-2. Each extracted file is hashed (SHA-256) and cross-referenced against the local hash signature store.
-3. **Known Safe** files are removed from the mount point and skipped.
-4. **Known Malicious** files trigger immediate parent archive deletion and pipeline termination.
-5. **Unknown** files are submitted to VirusTotal for individual file analysis.
-
----
-
-## Stage 5 — Executable Binary Reverse Engineering
-
-Activated for all files identified as **compiled executable formats** within the mount point.
-
-### Step 5.1 — Ghidra Decompilation
-Each executable binary is submitted to the headless Ghidra reverse engineering engine for automated disassembly and decompilation. The decompiled output is written to a designated output file path within the mount point.
-
-### Step 5.2 — Decompiled Output Hashing
-The SHA-256 hash of each decompiled output file is computed and stored in a `CompiledHashedMap`, which maintains a mapping of `compiled binary hash → decompiled script hash`. This map is used in Stage 6 to correlate LLM analysis verdicts back to their originating binary.
-
----
-
-## Stage 6 — LLM-Assisted Static Code Analysis (SCAT)
-
-Activated for all files identified as **script file formats** within the mount point, including decompiled outputs produced in Stage 5.
-
-### Step 6.1 — Script-to-PDF Conversion
-Each script file is converted to PDF format prior to LLM submission, ensuring consistent document formatting across all supported script types.
-
-### Step 6.2 — OpenAI GPT Static Analysis
-The PDF is submitted to OpenAI GPT with a cybersecurity analyst system prompt instructing the model to assess the script for malicious patterns. The model responds with:
-- `True` — Potential malware detected → File is flagged as malicious.
-- `False` — No malicious patterns identified → Proceeds to Gemini analysis.
-
-If the scan result exceeds 1,500 characters, it is delivered as a `.txt` file attachment to the Discord channel.
-
-### Step 6.3 — Google Gemini Static Analysis
-If OpenAI GPT returns a clean verdict, the PDF is submitted to Google Gemini for an independent static analysis pass under the same cybersecurity analyst role prompt. The model responds with:
-- `True` — Potential malware detected → File is flagged as malicious.
-- `False` — No malicious patterns identified → File is recorded as clean.
-
----
-
-## Stage 7 — Final Verdict & Cleanup
-
-### Malicious Verdict
-If any stage issues a malicious verdict:
-1. The SHA-256 hash of the flagged file (and its parent archive, if applicable) is recorded in the local malicious hash store.
-2. The associated compiled binary hash (via `CompiledHashedMap`) is also flagged if applicable.
-3. The originating Discord message is deleted.
-4. The mount point and all temporary files are purged.
-5. The scan session is written to `CyberbotURLAndFileScanLog.txt`.
-
-### Clean Verdict
-If all stages return a clean verdict:
-1. The SHA-256 hash of the file is recorded in the local clean hash store.
-2. The mount point and all temporary files are purged.
-3. A safe-to-download confirmation is posted to the channel (if `Silent-Mode` is `False`).
-4. The scan session is written to `CyberbotURLAndFileScanLog.txt`.
-
----
-
-## Pipeline Summary
-
-```
-Message Detected
+```text
+Discord server message / edited message / manual scan
+│
+├── Pre-flight checks and per-server configuration
+│   ├── Ignore CyberBot's own messages and unsupported DM context
+│   ├── Check excluded channel (except manual scans)
+│   ├── Check automation mode enable
+│   └── Identify URLs and/or attachments
+│
+├── URL path
+│   ├── Decode/check traversal patterns
+│   ├── Inspect HTTP redirect hops before following them
+│   │   ├── Validate scheme, hostname, port, and DNS answers
+│   │   ├── Reject SSRF destinations and unsafe redirects
+│   │   └── Record redirect path and final destination
+│   ├── Route Discord CDN attachments into file pipeline
+│   ├── Validate supported Klipy GIF links
+│   └── SHA-256 history → VirusTotal URL scan → verdict
+│
+└── File path
+    ├── Validate attachment name and size
+    ├── Stream/hash attachment; detect its actual format
+    ├── Share in-progress work for identical SHA-256 content
+    ├── SHA-256 history / encrypted / scope checks
+    ├── VirusTotal scan of root attachment
+    ├── Archive or disk image?
+    │   ├── Recursively inspect eligible nested containers
+    │   ├── Count bytes and duplicates; apply bomb limits
+    │   ├── Examine supported QEMU disk states/snapshots
+    │   ├── Build Markdown filesystem tree and JSON report
+    │   └── Retain unique in-scope regular files in flat scan folder
+    ├── VirusTotal scan of extracted regular files
+    ├── Ghidra decompilation for supported compiled binaries
+    └── OpenAI / Gemini SCAT for scripts and decompiled code
         │
-        ├──► URL(s) Found
-        │         │
-        │         ├── Path Traversal Check
-        │         ├── URL Resolution & Accessibility Validation
-        │         ├── Concurrent Scan Deduplication
-        │         ├── Local Hash Signature Lookup
-        │         └── VirusTotal Multi-Engine URL Scan
-        │
-        └──► File Attachment(s) Found
-                  │
-                  ├── Path Traversal Check (Filename)
-                  ├── File Size Validation (≤ 300 MB)
-                  ├── File Download & Magic Byte Identification
-                  ├── Concurrent Scan Deduplication
-                  ├── Local Hash Signature Lookup
-                  ├── Encrypted File Detection
-                  ├── Format Scope Validation
-                  ├── VirusTotal Multi-Engine File Scan
-                  ├── Archive/Disk Image Bomb Detection & Extraction
-                  │         └── Extracted Content → VirusTotal Scan
-                  ├── Ghidra Executable Decompilation
-                  └── LLM Static Code Analysis (OpenAI GPT → Google Gemini)
-                            │
-                            └── Final Verdict → Hash Store Update → Cleanup → Log
+        └── Final verdict → hash history (when appropriate)
+                          → Discord notification → cleanup → log
 ```
 
-# Limitations & Future Work
+URLs and attachments are scheduled with `asyncio.create_task()` and collected with `asyncio.as_completed()`. A malicious result can be acted on as soon as its task finishes; other already-running tasks are not automatically cancelled. Separate semaphores restrict expensive operations.
 
 ---
 
-1. If you are using a free Virus Total API, then the latency of Virus Total analyses is gonna be average around **40s-80s**. The premium API would be needed, if you wish to furher extended this Discord bot into an enterprise level security tool. 
+## 3. Trigger conditions and server configuration
 
-2. The pre-trained phishing email encoder-transformer were one of my ML project can be found [here](https://github.com/DavidNguyen1812/PhishingEmailDetector). I am new to machine learning, and most of the model architecture was written by Claude, under careful supervision.
+Automatic processing enters through the Discord `on_message` and `on_message_edit` handlers. `/manual_malware_scan` invokes the same scanning coordinator for one uploaded attachment.
 
-3. The pre-trained password strenght encoder-transformer has the same based architecture as the phishing email. The dataset used to train the models can be found [here](https://github.com/Infinitode/PWLDS).
+| Item | Current behavior |
+|---|---|
+| Bot's own messages | Ignored by the main scan coordinator. |
+| Direct messages | The coordinator performs a DM-context guard; it is designed for server messages. |
+| New server | Initializes entries for `Non-monitoring-Channels`, `Silent-Mode`, and `Automation-Mode`, then persists them. |
+| Excluded channels | Skipped for automatic scans when channel ID appears in `Non-monitoring-Channels`. |
+| Automation mode | Skipped for automatic scans when Cyberbot automation mode for the server is `DISABLED`. |
+| URLs | HTTP(S) URL candidates extracted from message text; repeated strings deduplicated. |
+| Attachments | Discord uploads and recognized Discord CDN attachment URLs enter the file pipeline. |
+| Manual scans | `/manual_malware_scan` processes an explicitly supplied attachment and bypasses automatic channel exclusions. |
+| Silent mode | Controls some ordinary progress/results messages; critical verdict and other code paths may still produce messages. |
 
-4. Cyberbot does not have any advance web search capability, so during the URL Resolution & Accessibility Validation phrase, if the the URL response status code are in the error range 400-500, then the URL will not be scan. Usually, a malicious website should be designed with less restriction in order to attract as much victim as possible, but that just an assumption.
 
-5. Cyberbot can be susceptible to fileless virus, so make sure you run Cyberobt on a dedicated device like a raspberry pi, AWS EC2 instance, with a Golden Image backup.
+---
 
-6. The asychronous programing of Cyberbot did not integrate with semaphore to limit the number of coroutines that can access a shared resource or run a specific section of code simultaneously. This is essential to not overload the CPU with too many tasks resulting from many file/url scan operations.
+## 4. URL inspection and scanning pipeline
+
+URL processing is divided between `URLPreprocessingModule.py`, `CyberBotURLScanModule.py`, `CyberBotVirusTotalModule.py`, and `CyberBotHashDatabaseModule.py`.
+
+### Stage 4.1 — Extract and pre-validate candidate URLs
+
+- Find HTTP(S) URL strings in message content and remove exact duplicates.
+- Reject repeated URL-decoded `../` traversal sequences.
+- Validate syntax, allowed HTTP(S) schemes, and required hostnames.
+- Reject embedded URL credentials, nonstandard web ports, and ambiguous hostnames.
+
+### Stage 4.2 — Inspect every redirect hop for SSRF
+
+The preprocessor makes HTTP requests with `allow_redirects=False` and evaluates the `Location` header one hop at a time. Every next destination is validated **before** the next request. It uses DNS lookup plus a pinned resolver for each inspected connection, reducing the risk that a separately resolved private address will be contacted during this phase.
+
+Its checks include:
+
+| Check | Action |
+|---|---|
+| Loopback, private, link-local, and other non-global IP destinations | Block and issue malicious URL inspection verdict. |
+| Localhost, container/internal, and cloud metadata hostname patterns | Block. |
+| Non-HTTP(S) redirect target or disallowed port | Block. |
+| Embedded credentials or traversal in a redirect | Block. |
+| Redirect loop, excessive redirects, failed DNS/HTTP inspection, or timeout | Stop processing as **unverified** rather than claiming a confirmed SSRF verdict. |
+
+The current configured limits are **12 redirects** and **15 seconds total URL inspection**. The log records the URL path and the reason. For a confirmed unsafe destination, CyberBot attempts to delete the originating message and stops further scanning of that message.
+
+Example inspection record:
+
+```text
+https://example.test/start
+    -> https://example.test/next
+    -> http://127.0.0.1/admin
+
+Inspection: MALICIOUS
+Reason: Non-public destination in redirect path
+Action: Stop URL processing; attempt message deletion
+```
+
+*The addresses above are illustrative, not actual test results.*
+
+### Stage 4.3 — Classify the final public destination
+
+- `https://klipy.com/gifs/` URLs undergo the Klipy provider check before being handled as ordinary URLs.
+- URLs at `cdn.discordapp.com` under `/attachments/` are routed to the **attachment** scanning path.
+- Other successfully inspected HTTP(S) URLs proceed to VirusTotal.
+
+### Stage 4.4 — Check local URL SHA-256 history
+
+`scanOneURL()` hashes the final URL, checks the local malicious and clean signature databases, and uses a per-hash lock to avoid duplicate concurrent URL work.
+
+| Local result | Action |
+|---|---|
+| Previously malicious | Return malicious verdict without repeating VirusTotal analysis. |
+| Previously clean | Return clean-history verdict without repeating VirusTotal analysis. |
+| Unknown | Query VirusTotal. |
+
+### Stage 4.5 — VirusTotal URL scan
+
+The code checks available VirusTotal URL analysis, submits unknown URLs when needed, and polls for completion. A nonzero malicious-engine count becomes a malicious verdict; a completed zero-malicious count is treated as clean by the current code. Errors, rate limits that cannot be resolved, and invalid responses become unverified.
+
+> **SSRF limitation:** This pre-inspection protects its own redirect-inspection requests. A later downloader or another HTTP client must independently apply safe destination validation; prechecking a URL cannot guarantee that a separate later network request will use the same DNS answer or redirect path.
+
+---
+
+## 5. File attachment scanning pipeline
+
+The attachment workflow lives primarily in `CyberBotAttachmentScanModule.py` and `CyberBotFileUtilitiesModule.py`.
+
+### Stage 5.1 — Validate filename and intake size
+
+- Reject filename patterns resembling path traversal (including `../` and absolute-path patterns).
+- Retrieve attachment bytes in streamed HTTPS chunks, compute SHA-256, and enforce the **300,000,000-byte** file scan limit.
+- The HTTP attachment fetch uses `allow_redirects=False`.
+- The current implementation can retain eligible attachment contents in RAM for later processing; its initial hashing step does not create a duplicate disk download.
+
+### Stage 5.2 — Identify the true file format
+
+CyberBot examines file content/signatures with its format-detection helpers instead of trusting the declared filename extension alone. It then compares the detected type against `SUPPORTED_FILE_FORMATS`.
+
+Encrypted or unsupported root files receive an unverified/out-of-scope result rather than an automatic clean verdict.
+
+### Stage 5.3 — Deduplicate concurrent work and check local history
+
+- `InFlightFileScans` lets identical SHA-256 attachments share an in-progress scan result rather than create competing full scan jobs.
+- `HashScanLocks` coordinates additional per-hash work.
+- A previously flagged malicious hash returns a malicious result.
+- A previously clean hash returns a clean-history result.
+- Unknown hashes continue to full content analysis in a private temporary workspace.
+
+### Stage 5.4 — VirusTotal root-file analysis
+
+The full root attachment is scanned through VirusTotal. The report includes malicious, suspicious, harmless, and undetected engine counts.
+
+| Finding | Current handling |
+|---|---|
+| One or more malicious detections | Flag malicious and stop that attachment's deeper analysis. |
+| Suspicious detections without malicious detections | Preserve an unverified reason while other applicable checks proceed. |
+| VirusTotal API error | Preserve an unverified reason; other checks may still run. |
+| No malicious detections | Continue with the content-specific pipeline. |
+
+---
+
+## 6. Archive and disk-image analysis
+
+`ArchiveDiskImageScanModule.py` handles recursive extraction, cumulative accounting, duplicate detection, disk-image state inspection, and a logical filesystem manifest.
+
+### Stage 6.1 — Supported container families
+
+**Archives and compressed streams:** ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.LZMA, TGZ, TBZ2, TXZ, GZ, RAR, BZ2, XZ, and LZMA.
+
+**Disk image extensions:** `.dmg`, `.iso`, `.img`, `.vhd`, `.nrg`, `.vhdx`, `.vmdk`, `.qcow`, `.qcow2`, and `.udf`.
+
+Format recognition does **not** imply every format, filesystem, parent chain, or historical state can be exhaustively inspected.
+
+### Stage 6.2 — Cumulative byte and archive-bomb accounting
+
+The extraction context begins by adding the **original root archive/disk-image size on disk**, then adds the bytes read from extracted entries, including nested content. It also tracks file count, duplicate files, duplicate containers, and resource limits.
+
+The key configured limits in the supplied version are:
+
+| Rule | Current configured value |
+|---|---:|
+| Individual retained scan file (`MAX_FILE_SCAN_SIZE`) | 300,000,000 bytes |
+| Cumulative extracted accounting (`UNCOMPRESSED_SIZE_LIMIT`) | 50,000,000,000 bytes |
+| Nested archive size (`NESTED_ARCHIVE_SIZE_LIMIT`) | 1,000,000,000 bytes |
+| Disk conversion/work storage (`MAX_DISK_IMAGE_STORAGE`) | 50,000,000,000 bytes |
+| Maximum virtual disk size (`MAX_VIRTUAL_DISK_SIZE`) | 50,000,000,000 bytes |
+| Maximum file entries (`MAX_FILE_COUNT`) | 100,000 |
+| Maximum archive depth (`MAX_ARCHIVE_LAYER`) | 7 |
+| Maximum disk snapshots (`MAX_SNAPSHOTS`) | 5 |
+| Maximum extraction time (`MAX_SCAN_SECONDS`) | 300 seconds |
+| Duplicate archive threshold (`DUPLICATED_ARCHIVE_LIMIT`) | 4 |
+
+The engine also checks unsafe paths, unexpected link entries, repeated archive hashes, and excessive duplicate-file ratios. It categorizes rejected/unverifiable states in the JSON report.
+
+### Stage 6.3 — Flat scan folder with preserved logical structure
+
+CyberBot uses two **separate representations** of extracted content:
+
+1. **Flat scan folder:** Filesystem directory for later VirusTotal, Ghidra, and SCAT processing. It aims to retain only unique, supported, non-container regular files at or below 300 MB.
+2. **JSON scan report:** Logical directory tree containing entry names, sizes, SHA-256 hashes, scan status, skipped files, nested containers, and available snapshot views. The manifest is rendered by `uncompressedFileStructure()` using Markdown-style branches (`├──`, `└──`, `│`).
+
+Nested archives and disk images are inspected using temporary container copies, then removed instead of being left as scan targets. `.DS_Store`, Apple `._*` files, content under `__MACOSX`, oversized entries, and unsupported entries remain **visible in the report** but are excluded from the final flat scan folder.
+
+Illustrative manifest rendering:
+
+```text
+└── Everything.zip (Directory)
+    ├── Configurations (Directory)
+    │   ├── CyberBotConfig.json (500 bytes; Within Cyberbot scan scope)
+    │   ├── .DS_Store (6,144 bytes; macOS metadata file - Cyberbot does not scan)
+    │   └── large.bin (300,000,001 bytes; File size exceeds 300 MB - Cyberbot does not scan)
+    └── nested.qcow2 (1,024,000 bytes; Nested disk image)
+        ├── Active disk state (Active disk state inspected)
+        │   └── application.exe (12,000 bytes; Within Cyberbot scan scope)
+        └── Snapshot 1 (QCOW internal snapshot inspected)
+            └── old_script.py (1,500 bytes; Within Cyberbot scan scope)
+```
+
+The scan folder itself does **not** recreate this hierarchy; the report preserves it.
+
+### Stage 6.4 — Disk-image states and snapshots
+
+For QEMU-recognized disk formats, the code uses `qemu-img` metadata checks and attempts to convert the active state and supported internal snapshots to temporary RAW images. It then invokes `7zz` to list/read visible filesystem members without directly mounting the untrusted image on the host.
+
+- External backing-image dependencies are rejected as unverified when the parent cannot be independently validated.
+- Snapshot inventory is recorded so a failure can leave a visible **not inspected** state.
+- The visible filesystem and historical-state checks depend on actual format and tool support.
+- Historical APFS/Btrfs/ZFS/NTFS filesystem snapshots and optical multisession histories are **not exhaustively enumerated** by this implementation; some disk-image paths explicitly return unverified.
+
+**Important:** Not mounting an image directly reduces one class of exposure, but QEMU and 7-Zip still parse untrusted data. Run them with restricted privileges, network access, disk quotas, and resource isolation in a production security environment.
+
+### Stage 6.5 — Scan extracted files
+
+After successful extraction, CyberBot walks the flat scan folder, checks hashes against local history, and submits eligible unknown files to VirusTotal. Supported binaries and scripts can also enter the later Ghidra/SCAT stages.
+
+Manifest notes, skipped entries, or incomplete disk-state coverage must be treated as **coverage limitations**, not proof that the skipped content is harmless. In this version the parent scan's success path primarily checks the extraction function's return value, so callers must not assume all manifest warnings automatically prevent a clean result.
+
+---
+
+## 7. Ghidra reverse engineering
+
+`CyberBotGhidraIntegrationModule.py` starts Ghidra's headless analyzer for supported compiled/executable formats. The Ghidra-side script, `GhidraDecompile.py`, generates a text representation of available decompiled functions.
+
+The attachment pipeline computes the SHA-256 hash of each decompiled result and records a `CompiledHashedMap` mapping the original compiled content hash to the decompiled output hash. This enables later SCAT detections to be associated with their source binary.
+
+A decompilation failure contributes an **unverified reason**; it must not be interpreted as evidence that a binary is clean.
+
+---
+
+## 8. LLM-assisted static code analysis (SCAT)
+
+`CyberBotLLMScanModule.py` performs OpenAI and Google Gemini analysis of supported scripts and decompiled code.
+
+1. Collect supported script files and successful Ghidra decompilation outputs.
+2. Convert manageable text/script content into a PDF using `txtToPDFConversion()`.
+3. Submit it to the configured OpenAI model (`GPT_MODEL`).
+4. If no malicious result stops analysis, submit it to the configured Gemini model (`GEMINI_MODEL`).
+5. For oversized model input, use the module's `partialLLMSCAT()` fallback where applicable.
+6. Record verdicts and propagate matching compiled/decompiled hash relationships when applicable.
 
 
+Model output is a heuristic analysis signal. Errors, inconclusive responses, or unsupported input can leave the file unverified. An LLM's clean answer is not a definitive malware proof.
+
+---
+
+## 9. Final verdicts, notifications, and cleanup
+
+The coordinator receives individual `URLScanResult` and `FileScanResult` objects and combines their log sections.
+
+| Scan status | Meaning in this project | Typical action |
+|---|---|---|
+| `malicious` | A blocking inspection finding or malicious scan result | Attempt deletion of the original Discord message for automatic scans; report reason and record applicable malicious hashes. |
+| `clean` | Completed applicable checks according to current scan logic, or previously clean hash | Record applicable clean hashes and send a result when configured. |
+| `unverified` | Content or a required decision could not be conclusively inspected | Report the limitation; do not mark safe solely for being unverified. |
+| `error` | An unexpected processing/API failure | Record an error result and continue other independent tasks when possible. |
+| `too_large` | Attachment exceeds the file scanning threshold | Stop that attachment's scan and report it as unverified. |
+| `unsupported` | Unsupported input type (where a caller uses this status) | Do not claim a full scan. |
+
+For attachment processing, each scan owner creates an isolated working directory under `DownloadDirectory/` and removes it in a `finally` block after processing. Scan-session data is appended to the Markdown log file.
+
+Progress messages are sent for many stages when silent mode is disabled. Long scan messages may be attached as `ScanResult.md` rather than posted as a normal Discord text message.
+
+---
+
+## 10. Administration, local models, and scheduled tasks
+
+The modular build includes Discord slash commands for administrator account registration, email/token confirmation, permission management, login/logout, password reset, viewing/changing server configuration, excluded channel management, manual malware scans, file type inspection, and phishing-email analysis.
+
+The local classification functionality uses the models in `EncoderTransformers.py` and the configured BERT/Longformer tokenizer and PyTorch checkpoint files. These classifiers are distinct from OpenAI/Gemini SCAT.
+
+Scheduled tasks perform periodic token/credential checks, permissions-related checks, and usage reporting. The source configures loops at **1 minute**, **15 seconds**, and **daily at midnight America/New_York** respectively.
+
+---
+
+## 11. Setup and execution
+
+### Prerequisites
+
+- A supported Python environment with the libraries checked by `CyberBotRuntimeModule.py` (including `discord.py`, `aiohttp`, `aiofiles`, `openai`, `google-genai`, `python-magic`, `rarfile`, `transformers`, `torch`, `bcrypt`, and the analytics libraries).
+- External utilities available on `PATH`: `7zz`, `qemu-img`, `java`, and `unar`.
+- A configured Ghidra installation with the expected Ghidrathon extension.
+- Configuration JSON files, hash-history files, tokenizers, and pretrained model checkpoints at the paths expected by the runtime.
+- Valid credentials and access for the external APIs being used.
+
+The runtime performs dependency and installation checks during import, and the URL preprocessing module fetches ScrapeOps browser headers during import. This means even an import-based smoke test may require external resources unless it uses the supplied mocked test harness.
+
+### Environment variables used by the supplied code
+
+```dotenv
+DISCORD_API_KEY=your_discord_token
+VT_API_KEY=your_virustotal_api_key
+GHIDRA_INSTALL_DIR=/path/to/ghidra
+JEPLIBPATH=/path/to/jep/library
+KLIPHY_API_KEY=your_klipy_api_key
+SCRAPEOPS_API_KEY=your_scrapeops_api_key
+EMAIL_CRED=your_email_credential
+
+# Set provider credentials required by your installed OpenAI and Gemini SDKs.
+# Exact SDK credential mechanisms depend on your environment.
+```
+
+### Launch
+
+Place the modular Python files together in the expected `PythonScripts/` directory so that `ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent` in the runtime resolves to the project root. Then launch using the same interpreter/virtual environment as the original bot:
+
+```bash
+cd /path/to/ProjectRoot/PythonScripts
+python3 Cyberbot.py
+```
+
+`GhidraDecompile.py` is launched by the Ghidra integration; it is **not** imported into normal CPython.
+
+---
+
+## 12. Logs and reporting
+
+The runtime refers to these locations under the project root:
+
+| Output | Location |
+|---|---|
+| URL/file scan sessions | `Files/Logs/CyberbotURLAndFileScanLog.md` |
+| Application commands | `Files/Logs/CyberBotDiscordCommandsLog.md` |
+| Cron/scheduled tasks | `Files/Logs/CyberBotCronTasksLog.md` |
+| LLM usage accounting | `Files/LLM Usages/` |
+| Clean SHA-256 history | `Files/HashedSignatures/CleanSHA256Signatures.json` |
+| Malicious SHA-256 history | `Files/HashedSignatures/MaliciousSHA256Signatures.json` |
+| Temporary attachment processing | `DownloadDirectory/` |
+| Temporary Ghidra projects | `CyberbotGhidraProject/` |
+
+Archive and disk-image inspection also writes a per-scan JSON report to the path provided by the attachment scanner, and uses it to generate the Markdown filesystem visualization. The attachment pipeline removes its temporary JSON report after consuming the results.
+
+---
+
+## 13. Known limitations and security considerations
+
+1. **Incomplete coverage must stay unverified:** The archive manifest can contain warnings about skipped files and historical snapshots. A successful extraction return is not equivalent to comprehensive malware inspection.
+2. **Redirect pre-inspection is not a permanent network authorization:** Other HTTP requests must independently enforce SSRF restrictions; the separate attachment download path is not covered by the URL pre-inspector's pinned DNS connection.
+3. **Externally executed parsers are not a sandbox:** Untrusted image conversion and extraction still require OS-level isolation, bounded storage, memory, CPU, and network restrictions.
+4. **Concurrency requires service limits:** Semaphore values are configured in the runtime, but VirusTotal, model providers, the filesystem, and Ghidra have their own practical limits.
+5. **Models and vendor tools are external dependencies:** Provider/model availability, credentials, GhidraThon versions, and binary compatibility need verification in the deployment environment.
+6. **A non-malicious result is not a guarantee:** VirusTotal engine counts, hash history, format detection, and LLM analysis may all miss malicious behavior.
+7. **Free Virus Total API:** Free Virus Total API analyses is gonna be average around **40s-80s**. The premium API would be needed, if you wish to furher extended this Discord bot into an enterprise level security tool.
+8. **Pre-Trained Password Strength PyTorch Models:** The pre-trained password strenght encoder-transformer has the same based architecture as the phishing email. The dataset used to train the models can be found [here](https://github.com/Infinitode/PWLDS).
+9. **Pre-Trained Phishing Email Classifier PyTorch Models:** The pre-trained phishing email encoder-transformer were one of my ML project can be found [here](https://github.com/DavidNguyen1812/PhishingEmailDetector). I am new to machine learning, and most of the model architecture was written by Claude, under careful supervision.
+10. **Web Search:** Cyberbot does not have any advance web search capability, so during the URL Resolution & Accessibility Validation phrase, if the the URL response status code are in the error range 400-500, then the URL will not be scan. Usually, a malicious website should be designed with less restriction in order to attract as much victim as possible, but that just an assumption.
+11. **Fileless Malware:** Cyberbot can be susceptible to fileless virus, so make sure you run Cyberobt on a dedicated device like a raspberry pi, AWS EC2 instance, with a Golden Image backup.
+
+---
+
+## 14. Quick reference
+
+```text
+Start CyberBot:               python3 Cyberbot.py
+Main scan coordinator:        CyberBotScan()
+URL safety pre-processing:    processingUrls()
+Concurrent URL analysis:      scanOneURL()
+Concurrent attachment scan:   scanOneAttachment()
+Full attachment analysis:     analyzeAttachmentContents()
+Archive / disk extraction:    ArchivesDiskImagesBombAnalysisAndExtraction()
+Markdown filesystem tree:     uncompressedFileStructure(scan_report_path)
+VirusTotal URL scan:          virusTotalURLScan()
+VirusTotal file scan:         virusTotalFileScan()
+Ghidra decompilation:         ghidraDecompile()
+OpenAI static analysis:       openAISCAT()
+Gemini static analysis:       GeminiSCAT()
+Local hash databases:         checkingCleanData(), checkingFlaggedMaliciousData(), addingHashedData()
+```
