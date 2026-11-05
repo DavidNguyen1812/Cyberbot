@@ -467,8 +467,8 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, custo
                                             async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                                                 await file.write(json.dumps(resetTokens, indent=4))
                                         update = True
+                                        salt = adminAccount["User Salt"].encode()
                                         if custompassword == "True":
-                                            salt = adminAccount["User Salt"].encode()
                                             hashednewpassword = bcrypt.hashpw(f"{newpassword}{ctx.user.id}".encode(), salt).decode('utf-8')
                                             if len(newpassword) > 30:
                                                 await ctx.followup.send("Your new password is too long!")
@@ -520,9 +520,9 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, custo
                                                         await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, custompassword -> {custompassword}, newpassword -> {newpassword}", "Denied/Password too common and easy to guess")
                                         else:
                                             newpassword = await randomPasswordGenerator()
-                                            while hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() == adminAccount["User Credential"] or hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest() in adminAccount["Previous Credentials Used"]:
-                                                newpassword = randomPasswordGenerator()
-                                            hashednewpassword = hashlib.sha512(f"{newpassword}{ctx.user.id}".encode()).hexdigest()
+                                            while bcrypt.hashpw(f"{newpassword}{ctx.user.id}".encode(), salt).decode('utf-8') in adminAccount["Previous Credentials Used"]:
+                                                newpassword = await randomPasswordGenerator()
+                                            hashednewpassword = bcrypt.hashpw(f"{newpassword}{ctx.user.id}".encode(), salt).decode('utf-8')
                                         if update:
                                             del resetTokens["Password Reset Token"][emailSHA512Hash]
                                             adminAccount["Current Admin Session Period"] = {}
