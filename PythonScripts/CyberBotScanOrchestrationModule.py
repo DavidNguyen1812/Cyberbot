@@ -117,8 +117,8 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
 
     if URLs:
         logMessage += "## URL Scan Summary\n"
-    scanTasks = [asyncio.create_task(scanOneURL(url)) for url in URLs]
-    scanTasks.extend(asyncio.create_task(scanOneAttachment(attachmentUrl, RootFileName, message=message if not manualScan else None, isSilent=isSilent)) for attachmentUrl, RootFileName in fileAttachmentUrls.items())
+    scanTasks: list[asyncio.Task[URLScanResult] | asyncio.Task[FileScanResult]] = [asyncio.create_task(scanOneURL(url)) for url in URLs]
+    scanTasks.extend([asyncio.create_task(scanOneAttachment(attachmentUrl, RootFileName, message=message if not manualScan else None, isSilent=isSilent)) for attachmentUrl, RootFileName in fileAttachmentUrls.items()])
 
     messageDeleted = False
     results = []
@@ -153,19 +153,9 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                     messageDeleted = True
                 except discord.Forbidden:
                     print(f"Cyberbot does not have permission to delete message {message.id}")
-            if manualScan:
-                sendingMessage += scanResult.sendingMessage + "\n"
-                await SendScanMessage(message, scanResult.sendingMessage, manualScan=True)
-            else:
-                await SendScanMessage(message, scanResult.sendingMessage)
-        elif not isSilent and not manualScan:
-            await SendScanMessage(message, scanResult.sendingMessage)
-        elif manualScan:
-            if not sendingMessage:
-                sendingMessage = "Cyberbot completed the scan, but no conclusive result was returned."
-            else:
-                sendingMessage += scanResult.sendingMessage + "\n"
-                await SendScanMessage(message, sendingMessage, manualScan=True)
+            await SendScanMessage(message, scanResult.sendingMessage, manualScan=manualScan)
+        elif (not isSilent and scanResult == "clean") or (scanResult != "clean"): # Unverified or Error Scan Results should be notified regardless of Silent mode enable or not
+            await SendScanMessage(message, scanResult.sendingMessage, manualScan=manualScan)
 
     if any(result.status in ("unverified", "error", "too_large", "unsupported") for result in results):
         logMessage += "## SPECIAL NOTE:\nOne or more contents could not be fully verified; do not treat as safe.\n\n---\n\n"
