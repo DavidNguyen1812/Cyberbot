@@ -78,10 +78,11 @@ async def checking_expired_tokens():
                 await file.write(json.dumps(resetTokens, indent=4))
         logMessage += "\n---\n\n"
         if pending_delete_tokens:
+            print("\n\n")
             await CronTaskLog(logMessage)
     finally:
         # Free content in RAM
-        print("\n\n")
+        pending_delete_tokens = None
         logMessage = None
         resetTokens = None
 
