@@ -24,7 +24,10 @@ A Python-based security scanner designed for continuous, automated threat monito
 ```
 ├── CycberbotGhidraProject                        # Dedicated directory for Cyberbot to create temporary Ghidra Project during static disassembly and decompilation process
 ├── DownloadDirectory                             # Dedicated directory for Cyberbot to temporary store file for analysis
-├── Files                                        
+├── Files
+│   ├── Pictures
+│   │   ├── CyberbotAvatar.png                    # This is AI generated picture for Cyberbot Avatar (You can make changes to it as you like for your own version)
+│   │   └── CyberBotEmailLogo.png                 # This is AI generated picture for Cyberbot Logo (You can make changes to it as you like for your own version)                              
 │   ├── Configurations
 │   │   ├── CyberBotConfig.json                   # Cyberbot Configuration to securely store user admin account authentication and Discord server admin acess, chat channels in server that Cyberbot not authorized to monitor, and scanning functionality
 │   │   └── OneTimeToken.json                     # Temporary stored a user requested password reset and email confirmation token
