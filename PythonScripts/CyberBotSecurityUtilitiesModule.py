@@ -5,11 +5,12 @@ from CyberBotAnalyticsModule import calculateUsageCost, writingLLMUsageCsv
 from CyberBotEmailTemplateModule import buildCyberbotHTMLEmail, getCyberbotEmailLogoBytes
 from email.utils import make_msgid
 
-def sendEmail(subject: str, receiver_email: str, otp: str="", otp_expiry: int=0) -> Literal["Email sent successfully!", "Email sent unsuccessfully!"]:
+def sendEmail(subject: str, receiver_email: str, user_discord_name: str, otp: str="", otp_expiry: int=0) -> Literal["Email sent successfully!", "Email sent unsuccessfully!"]:
     """
     Description: Sending email to registered user with admin account
     :param subject: Email subject
     :param receiver_email: Destination email address
+    :param user_discord_name: User discord name
     :param otp: A one time token, if the email contains one or not
     :param otp_expiry: Expiry time of the one time token
     :return: Email sent status of either failed or successes
@@ -35,7 +36,7 @@ def sendEmail(subject: str, receiver_email: str, otp: str="", otp_expiry: int=0)
         # NEW: Build a professional HTML alternative based on the existing subject
         # and content. Your admin command call sites do not need to change.
         logoCID = make_msgid(domain="cyberbot.local")
-        email.add_alternative(buildCyberbotHTMLEmail(subject, logoCID,  otp, otp_expiry), subtype="html")
+        email.add_alternative(buildCyberbotHTMLEmail(subject, user_discord_name, logoCID, otp, otp_expiry), subtype="html")
 
         # NEW: Embed the CyberBot crest inside the email using Content-ID.
         # No remote image hosting or base64 data URI is needed.
