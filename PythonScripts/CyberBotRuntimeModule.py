@@ -14,7 +14,7 @@ load_dotenv()
 OperatingSystem = "MacOS" # Set this to the OS that the bot is running on (Support MacOS and Linux)
 
 print("Checking Essential System Binaries")
-systembinaries = ["7zz", "qemu-img", "semgrep", "java", "unar"]
+systembinaries = ["7zz", "qemu-img", "java", "unar"]
 for systembinary in systembinaries:
     result = subprocess.run(["which", systembinary], capture_output=True, text=True)
     if f"{result.stderr}{result.stdout}":
