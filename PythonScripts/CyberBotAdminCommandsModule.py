@@ -35,7 +35,7 @@ async def create_admin_account(ctx, user_email: str):
             resetTokens = json.loads(await file.read())
     if emailSHA512Hash in resetTokens["Email Confirmation Token"]:
         await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/An Email Confirmation Token that still valid already sent to the user email!")
-        await ctx.followup.send(f"You have already request an admin account registration and a {ONE_TIME_TOKEN_EXPIRY // 60} minutes Admin Account Email Verification Code was sent to the email! Please confirm your email using the command /confirm_admin_account with the code or wait until the code expired to request a new one again using this command!")
+        await ctx.followup.send(f"You have already request an admin account registration and a {ONE_TIME_TOKEN_EXPIRY // 60} minutes Admin Account Email Verification Code was sent to the email! Please confirm your email using the command /confirm_admin_account_creation with the code or wait until the code expired to request a new one again using this command!")
         print(f"A valid OTP code already sent to email {emailSHA512Hash}\n\n")
     else:
         token = ""
@@ -43,7 +43,7 @@ async def create_admin_account(ctx, user_email: str):
         for i in range(10, 20):
             token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
         if emailTaken:
-            sendMessage = f"Please confirm your email using the command /confirm_admin_account with the OTP code sent at {user_email}!"
+            sendMessage = f"Please confirm your email using the command /confirm_admin_account_creation with the OTP code sent at {user_email}!"
             print("Email address already associated with a different admin account!\n\n")
             resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
             async with OneTimeTokenLock:
@@ -51,12 +51,12 @@ async def create_admin_account(ctx, user_email: str):
                     await file.write(json.dumps(resetTokens, indent=4))
             await LoggingApplicationCommand(ctx, f"/create_admin_account", f"user_email -> REDACTED", "Denied/Email address already taken by other user admin account!")
         elif not accountExist and not emailTaken:
-            if await asyncio.to_thread(sendEmail, "Email Verification Code", f"Your Cyberbot Admin Account Email Verification Code is {token}\n\nThis code will expire in 4 minutes!\nIf you did not request this, please ignore this message.", user_email, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+            if await asyncio.to_thread(sendEmail, "Email Verification Code", user_email, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                 resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
                 async with OneTimeTokenLock:
                     async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                         await file.write(json.dumps(resetTokens, indent=4))
-                sendMessage = f"Please confirm your email using the command /confirm_admin_account with the OTP code sent at {user_email}!"
+                sendMessage = f"Please confirm your email using the command /confirm_admin_account_creation with the OTP code sent at {user_email}!"
                 print(f"New Email OTP code sent to {user_email}\n\n")
                 await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Approved/An Email Confirmation Token was sent to the user email!")
             else:
@@ -72,15 +72,15 @@ async def create_admin_account(ctx, user_email: str):
 
 
 @Cyberbot.tree.command(
-    name="confirm_admin_account",
+    name="confirm_admin_account_creation",
     description="Confirm to finish creating a Cyberbot admin account"
 )
 @app_commands.describe(
     user_email="Please provide an email address to confirm your Cyberbot admin account!",
     otp="Please provide a valid Email Confirmation Code!"
 )
-async def confirm_admin_account(ctx, user_email: str, otp: str):
-    print(f"User {ctx.user.name} initiated /confirm_admin_account command")
+async def confirm_admin_account_creation(ctx, user_email: str, otp: str):
+    print(f"User {ctx.user.name} initiated /confirm_admin_account_creation command")
     await ctx.response.defer(ephemeral=True)
     emailSHA512Hash = hashlib.sha512(user_email.encode()).hexdigest()
     async with OneTimeTokenLock:
@@ -91,7 +91,7 @@ async def confirm_admin_account(ctx, user_email: str, otp: str):
             del resetTokens["Email Confirmation Token"][emailSHA512Hash] # OTP is removed upon correctly provided!
             if time.time() < resetTokens["Email Confirmation Token"][emailSHA512Hash][1]:
                 defaultPassword = await randomPasswordGenerator()
-                if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created",f"A new Cyberbot admin account was created with a default password:\n{defaultPassword}\nThe default password will expired in {FIRST_TIME_PASSWORD_EXPIRY // 60} minutes. Please use command /request_password_reset_token and /change_password to set your very own secure password!", user_email, defaultPassword, FIRST_TIME_PASSWORD_EXPIRY) == "Email sent successfully!":
+                if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created", user_email, defaultPassword, FIRST_TIME_PASSWORD_EXPIRY) == "Email sent successfully!":
                     async with OneTimeTokenLock:
                         async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                             await file.write(json.dumps(resetTokens, indent=4))
@@ -121,23 +121,23 @@ async def confirm_admin_account(ctx, user_email: str, otp: str):
                             await file.write(json.dumps(CyberBotConfigData, indent=4))
                     await ctx.followup.send(f"A new admin account has been created for you! Please check the email you used to registered the account for more details!")
                     print(f"New Admin account created for user {ctx.user.name}\n\n")
-                    await LoggingApplicationCommand(ctx, "/confirm_admin_account", f"user_email -> REDACT, otp -> {otp}", f"Approved/New admin account registered for user {ctx.user.name}")
+                    await LoggingApplicationCommand(ctx, "/confirm_admin_account_creation", f"user_email -> REDACT, otp -> {otp}", f"Approved/New admin account registered for user {ctx.user.name}")
                 else:
                     await ctx.followup.send("Cyberbot can not send the account creation confirmation email to you! Please try reqeust a new code again with command /create_admin_account and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
                     print(f"Error sending email!\n\n")
-                    await LoggingApplicationCommand(ctx, "/confirm_admin_account", f"user_email -> REDACT, otp -> {otp}", "Denied/Cyberbot can not send Account Creation Confirmation email to user email!")
+                    await LoggingApplicationCommand(ctx, "/confirm_admin_account_creation", f"user_email -> REDACT, otp -> {otp}", "Denied/Cyberbot can not send Account Creation Confirmation email to user email!")
             else:
                 await ctx.followup.send(f"The Email Confirmation Code that you provided is expired. Please use command /create_admin_account to register a new one again!")
                 print(f"Expired Email Confirmation Token associated with the provided email!\n\n")
-                await LoggingApplicationCommand(ctx, "/confirm_admin_account", f"user_email -> REDACT, otp -> {otp}", "Denied/Expired Email Confirmation Code!")
+                await LoggingApplicationCommand(ctx, "/confirm_admin_account_creation", f"user_email -> REDACT, otp -> {otp}", "Denied/Expired Email Confirmation Code!")
         else:
             await ctx.followup.send(f"The Email Confirmation Code that you provided is invalid!")
             print(f"Invalid Email Confirmation Token associated with the provided email!\n\n")
-            await LoggingApplicationCommand(ctx, "/confirm_admin_account", f"user_email -> REDACT, otp -> {otp}", "Denied/Invalid Email Confirmation Code!")
+            await LoggingApplicationCommand(ctx, "/confirm_admin_account_creation", f"user_email -> REDACT, otp -> {otp}", "Denied/Invalid Email Confirmation Code!")
     else:
         await ctx.followup.send(f"There is no Email Confirmation Code associated with the provided email {user_email}. Please use command /create_admin_account to register one!")
         print(f"No Email Confirmation Token associated with the provided email!\n\n")
-        await LoggingApplicationCommand(ctx, "/confirm_admin_account", f"user_email -> REDACT, otp -> {otp}", "Denied/No Email Confirmation Token associated with the provided email!")
+        await LoggingApplicationCommand(ctx, "/confirm_admin_account_creation", f"user_email -> REDACT, otp -> {otp}", "Denied/No Email Confirmation Token associated with the provided email!")
     resetTokens = None
     user_email = None
     defaultPassword = None
@@ -169,7 +169,7 @@ async def remove_admin_account(ctx, accountemail: str, accountpassword: str):
                             token = ""
                             for i in range(10, 20):
                                 token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-                            if await asyncio.to_thread(sendEmail, "Admin Account Delete Confirmation Token", f"Your Cyberbot Admin Account Delete Confirmation Token is {token}\n\nThis code will expire in {ONE_TIME_TOKEN_EXPIRY // 60} minutes!\nIf you did not request this, please ignore this message.", accountemail, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+                            if await asyncio.to_thread(sendEmail, "Admin Account Delete Confirmation Token", accountemail, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                                 resetTokens["Account Delete Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 240]
                                 await ctx.followup.send(f"For security reason, an Admin Account Delete Confirmation Token was sent to {accountemail}. Please use the command /confirm_delete_admin_account to finalize your admin account deletion!")
                                 await LoggingApplicationCommand(ctx, "/remove_admin_account", "acccountemail -> REDACT, password -> REDACT", "Denied/An Account Unregistration Confirmation Code was sent user email!")
@@ -247,7 +247,7 @@ async def confirm_delete_admin_account(ctx, accountemail: str, otp: str):
             if resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][0] == hashlib.sha1(otp.encode()).hexdigest():
                 del resetTokens["Account Delete Confirmation Token"][emailSHA512Hash]
                 if time.time() < resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][1]:
-                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", "You have requested an unregistration process of your Cyberbot admin account and your request has been approved! All data associated with the account are permanently deleted!", accountemail) != "Email sent unsuccessfully!":
+                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", accountemail) != "Email sent unsuccessfully!":
                         CyberBotConfigData["Admins"].pop(idx)
                         await ctx.followup.send("Your Cyberbot admin account has been deleted!")
                         print(f"User {ctx.user.name} admin account has been unregistered!\n\n")
@@ -281,6 +281,7 @@ async def confirm_delete_admin_account(ctx, accountemail: str, otp: str):
     name="viewing_admins",
     description="Viewing a list of members with Cyberbot admin privilege to your server!"
 )
+@app_commands.guild_only()
 async def viewing_admins(ctx):
     print(f"User {ctx.user.name} initiated /viewing_admins command")
     await ctx.response.defer(ephemeral=True)
@@ -309,6 +310,7 @@ async def viewing_admins(ctx):
     name="adding_admins",
     description="Granting member their admin account access to the server!"
 )
+@app_commands.guild_only()
 @app_commands.describe(
     member="Please mention a member in the server to grant their admin account access!"
 )
@@ -318,7 +320,7 @@ async def adding_admins(ctx, member: discord.Member):
     if str(ctx.channel.type).startswith("private"):
         await ctx.followup.send("/adding_admins can only be used in server channels!")
         print(f"Command forbidden to execute in DM channel!\n\n")
-        await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> {member.name}", "Denied/Command runs in DM channel")
+        await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> UNKNOWN", "Denied/Command runs in DM channel")
     else:
         if ctx.user.id == ctx.guild.owner.id:
             if ctx.guild.me.top_role.position < member.top_role.position and member.id != ctx.guild.owner.id:
@@ -366,6 +368,7 @@ async def adding_admins(ctx, member: discord.Member):
     name="removing_admins",
     description="Removing a member admin account access to the server!"
 )
+@app_commands.guild_only()
 @app_commands.describe(
     member="Please mention a member in the server to remove their admin account access!"
 )
@@ -375,7 +378,7 @@ async def removing_admins(ctx, member: discord.Member):
     if str(ctx.channel.type).startswith("private"):
         await ctx.followup.send("/removing_admins can only be used in server channels!")
         print(f"Command forbidden to execute in DM channel!\n\n")
-        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", "Denied/Command runs in DM channel")
+        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> UNKNOWN", "Denied/Command runs in DM channel")
     else:
         if ctx.user.id == ctx.guild.owner.id:
             if member.id == ctx.guild.owner.id:
@@ -414,7 +417,7 @@ async def removing_admins(ctx, member: discord.Member):
             await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", "Denied/Unauthorized User")
 
 
-# Command for user with registered admin account 
+# Command for user with registered admin account
 @Cyberbot.tree.command(
     name="request_password_reset_token",
     description="Request a new password reset token"
@@ -442,7 +445,7 @@ async def request_password_reset_token(ctx, accountemail: str):
                             token = ""
                             for i in range(7, 20):
                                 token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-                            if await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", f"Your password reset token is {token}, it will expired in {ONE_TIME_TOKEN_EXPIRY // 60} minutes!", accountemail, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+                            if await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", accountemail, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                                 resetTokens["Password Reset Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 180]
                                 async with OneTimeTokenLock:
                                     async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
@@ -476,7 +479,7 @@ async def request_password_reset_token(ctx, accountemail: str):
     await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
 
 
-
+# Command for user with registered admin account
 @Cyberbot.tree.command(
     name="change_password",
     description="Update your admin account password!"
@@ -557,7 +560,7 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
                                                         print(f"User {ctx.user.name} new password too common and easy to guess!\n\n")
                                                         update = False
                                                         await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> {newpassword}", "Denied/Password too common and easy to guess")
-                                            
+
                                             if update:
                                                 del resetTokens["Password Reset Token"][emailSHA512Hash]
                                                 adminAccount["Current Admin Session Period"] = {}
@@ -618,6 +621,7 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
     name="admin_log_in",
     description="Logging in with your Cyberbot admin account in the server"
 )
+@app_commands.guild_only()
 @app_commands.describe(
     accountemail="Please provide a valid email address associated with your admin account",
     accountpassword="Please provide the password associated with your account"
@@ -704,6 +708,7 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
     name="admin_log_out",
     description="Logging out of your current Cyberbot admin account session in the server"
 )
+@app_commands.guild_only()
 async def admin_log_out(ctx):
     print(f"User {ctx.user.name} initiated /admin_log_out command")
     await ctx.response.defer(ephemeral=True)
@@ -737,6 +742,7 @@ async def admin_log_out(ctx):
     name="cyberbot_config",
     description="Modifying Cyberbot configuration in the server"
 )
+@app_commands.guild_only()
 @app_commands.describe(
     configuration="Please select a configuration mode to enable/disable",
     action="Please select enable/disable"
@@ -789,6 +795,7 @@ async def cyberbot_config(ctx, configuration: Literal["Automation-Mode", "Silent
     name="viewing_cyberbot_configuration",
     description="Checking Cyberbot current configuration in the server"
 )
+@app_commands.guild_only()
 async def viewing_cyberbot_configuration(ctx):
     print(f"User {ctx.user.name} initiated /viewing_cyberbot_configurationcommand")
     await ctx.response.defer(ephemeral=True)
@@ -856,6 +863,7 @@ async def viewing_cyberbot_configuration(ctx):
     name="non_monitoring_channel",
     description="Adding or Removing the channel in the server that Cyberbot will not scan"
 )
+@app_commands.guild_only()
 @app_commands.describe(
     action="Please select ADD/REMOVE"
 )
