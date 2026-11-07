@@ -28,7 +28,7 @@ async def create_admin_account(ctx, user_email: str):
     async with OneTimeTokenLock:
         async with aiofiles.open(ONE_TIME_TOKEN_PATH, "r") as file:
             resetTokens = json.loads(await file.read())
-    if emailSHA512Hash in resetTokens["Email Confirmation Token"]:
+    if emailSHA512Hash in resetTokens["Email Confirmation Token"] or str(ctx.user.id) in resetTokens["Email Confirmation Token"]:
         await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/An Email Confirmation Token that still valid already sent to the user email!")
         await ctx.followup.send(f"You have already request an admin account registration and a {ONE_TIME_TOKEN_EXPIRY // 60} minutes Admin Account Email Verification Code was sent to the email! Please confirm your email using the command /confirm_admin_account_creation with the code or wait until the code expired to request a new one again using this command!")
         print(f"A valid OTP code already sent to email {emailSHA512Hash}\n\n")
@@ -41,6 +41,7 @@ async def create_admin_account(ctx, user_email: str):
                 sendMessage = f"Please confirm your email using the command /confirm_admin_account_creation with the OTP code sent at {user_email}!"
                 print("Email address already associated with a different admin account!\n\n")
                 resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
+                resetTokens["Email Confirmation Token"][str(ctx.user.id)] = [emailSHA512Hash, time.time() + ONE_TIME_TOKEN_EXPIRY] # Locked the email the user requested with their Discord unique User ID, this prevents a user from abusing this command and make Cyberbot sending Email Confirmation Token email to other emails that a malicious user provided!
                 async with OneTimeTokenLock:
                     async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                         await file.write(json.dumps(resetTokens, indent=4))
@@ -48,6 +49,7 @@ async def create_admin_account(ctx, user_email: str):
             else:
                 if await asyncio.to_thread(sendEmail, "Email Verification Code", user_email, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                     resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
+                    resetTokens["Email Confirmation Token"][str(ctx.user.id)] = [emailSHA512Hash, time.time() + ONE_TIME_TOKEN_EXPIRY] # Locked the email the user requested with their Discord unique User ID, this prevents a user from abusing this command and make Cyberbot sending Email Confirmation Token email to other emails that a malicious user provided!
                     async with OneTimeTokenLock:
                         async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                             await file.write(json.dumps(resetTokens, indent=4))
@@ -89,6 +91,7 @@ async def confirm_admin_account_creation(ctx, user_email: str, otp: str):
         if resetTokens["Email Confirmation Token"][emailSHA512Hash][0] == hashlib.sha1(otp.encode()).hexdigest():
             tokenExpiry = resetTokens["Email Confirmation Token"][emailSHA512Hash][1]
             del resetTokens["Email Confirmation Token"][emailSHA512Hash]  # OTP is removed upon correctly provided!
+            del resetTokens["Email Confirmation Token"][str(ctx.user.id)]
             async with OneTimeTokenLock:
                 async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                     await file.write(json.dumps(resetTokens, indent=4))
