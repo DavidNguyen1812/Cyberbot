@@ -88,8 +88,9 @@ async def confirm_admin_account_creation(ctx, user_email: str, otp: str):
             resetTokens = json.loads(await file.read())
     if emailSHA512Hash in resetTokens["Email Confirmation Token"]:
         if resetTokens["Email Confirmation Token"][emailSHA512Hash][0] == hashlib.sha1(otp.encode()).hexdigest():
-            del resetTokens["Email Confirmation Token"][emailSHA512Hash] # OTP is removed upon correctly provided!
-            if time.time() < resetTokens["Email Confirmation Token"][emailSHA512Hash][1]:
+            tokenExpiry = resetTokens["Email Confirmation Token"][emailSHA512Hash][1]
+            del resetTokens["Email Confirmation Token"][emailSHA512Hash]  # OTP is removed upon correctly provided!
+            if time.time() < tokenExpiry:
                 defaultPassword = await randomPasswordGenerator()
                 if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created", user_email, ctx.user.name, defaultPassword, FIRST_TIME_PASSWORD_EXPIRY) == "Email sent successfully!":
                     async with OneTimeTokenLock:
@@ -245,8 +246,9 @@ async def confirm_delete_admin_account(ctx, accountemail: str, otp: str):
                 resetTokens = json.loads(await file.read())
         if emailSHA512Hash in resetTokens["Account Delete Confirmation Token"]:
             if resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][0] == hashlib.sha1(otp.encode()).hexdigest():
+                tokenExpiry = resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][1]
                 del resetTokens["Account Delete Confirmation Token"][emailSHA512Hash]
-                if time.time() < resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][1]:
+                if time.time() < tokenExpiry:
                     if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", accountemail, ctx.user.name) != "Email sent unsuccessfully!":
                         CyberBotConfigData["Admins"].pop(idx)
                         await ctx.followup.send("Your Cyberbot admin account has been deleted!")
