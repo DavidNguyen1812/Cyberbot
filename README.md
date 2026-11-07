@@ -51,6 +51,7 @@ A Python-based security scanner designed for continuous, automated threat monito
     ├── CyberBotAnalyticsModule.py
     ├── CyberBotArchiveDiskImageScanModule.py
     ├── CyberBotAttachmentScanModule.py
+    ├── CyberBotEmailTemplateModule.py
     ├── CyberBotEncoderTransformersModule.py
     ├── CyberBotEventHandlersModule.py
     ├── CyberBotFileUtilitiesModule.py
@@ -574,6 +575,7 @@ CyberBot is an event-driven Discord security bot that examines URLs and file att
 | `CyberBotScheduledTasksModule.py` | Token/credential checks, role checks, and daily usage reports. |
 | `CyberBotAnalyticsModule.py` | LLM usage CSVs, costs, and charts. |
 | `EncoderTransformers.py` | BERT/Longformer-based local classifier models and prediction functions. |
+| `CyberBotEmailTemplateModule.py` | Customized HTML template for Cyberbot email. | 
 
 **Import behavior:** These are conventional Python imports, not `exec()`-loaded source fragments. All modules use the same initialized runtime objects; importing the main entry point does not itself call `Cyberbot.run()`.
 
