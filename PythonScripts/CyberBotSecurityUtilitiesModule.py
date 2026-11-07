@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from CyberBotRuntimeModule import *
 from CyberBotAnalyticsModule import calculateUsageCost, writingLLMUsageCsv
+from CyberBotEmailTemplateModule import buildCyberbotHTMLEmail, getCyberbotEmailLogoBytes
+from email.utils import make_msgid
 
-def sendEmail(subject: str, content: str, receiver_email: str) -> Literal["Email sent successfully!", "Email sent unsuccessfully!"]:
+def sendEmail(subject: str, receiver_email: str, otp: str="", otp_expiry: int=0) -> Literal["Email sent successfully!", "Email sent unsuccessfully!"]:
     """
     Description: Sending email to registered user with admin account
     :param subject: Email subject
-    :param content: Email content
     :param receiver_email: Destination email address
+    :param otp: A one time token, if the email contains one or not
+    :param otp_expiry: Expiry time of the one time token
     :return: Email sent status of either failed or successes
     """
     # Credit https://www.youtube.com/watch?v=g_j6ILT-X0k
@@ -28,20 +31,39 @@ def sendEmail(subject: str, content: str, receiver_email: str) -> Literal["Email
     email["Subject"] = subject
 
     # Add body to email
-    email.set_content(content)
     try:
+        # NEW: Build a professional HTML alternative based on the existing subject
+        # and content. Your admin command call sites do not need to change.
+        logoCID = make_msgid(domain="cyberbot.local")
+        email.add_alternative(buildCyberbotHTMLEmail(subject, logoCID,  otp, otp_expiry), subtype="html")
+
+        # NEW: Embed the CyberBot crest inside the email using Content-ID.
+        # No remote image hosting or base64 data URI is needed.
+        email.get_body(preferencelist=("html",)).add_related(
+            getCyberbotEmailLogoBytes(),
+            maintype="image",
+            subtype="png",
+            cid=logoCID,
+            filename="CyberBotEmailLogo.png",
+            disposition="inline",
+        )
+
+        # Retain the existing Gmail SMTP transport and success strings.
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as server:
             server.login(sender_email, os.environ.get("EMAIL_CRED"))
-            server.sendmail(sender_email, receiver_email, email.as_string())
+            server.send_message(email)
     except smtplib.SMTPRecipientsRefused as clientError:
         print(f"[Cyberbot Email System] Error sending email to {receiver_email}: {clientError}")
         return "Email sent unsuccessfully!"
     except Exception as other_error:
         print(f"[Cyberbot Email System] Error sending email to {receiver_email}: {other_error}")
         return "Email sent unsuccessfully!"
+    finally:
+        otp = ""
     print(f"[Cyberbot Email System] Automation Email sent to {receiver_email} succesfully!")
     return "Email sent successfully!"
+
 
 
 def txtToPDFConversion(txtFile: str, outputPDFPath: str):
