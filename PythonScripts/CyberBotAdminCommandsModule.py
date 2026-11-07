@@ -51,7 +51,7 @@ async def create_admin_account(ctx, user_email: str):
                     await file.write(json.dumps(resetTokens, indent=4))
             await LoggingApplicationCommand(ctx, f"/create_admin_account", f"user_email -> REDACTED", "Denied/Email address already taken by other user admin account!")
         elif not accountExist and not emailTaken:
-            if await asyncio.to_thread(sendEmail, "Email Verification Code", user_email, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+            if await asyncio.to_thread(sendEmail, "Email Verification Code", user_email, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                 resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
                 async with OneTimeTokenLock:
                     async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
@@ -91,7 +91,7 @@ async def confirm_admin_account_creation(ctx, user_email: str, otp: str):
             del resetTokens["Email Confirmation Token"][emailSHA512Hash] # OTP is removed upon correctly provided!
             if time.time() < resetTokens["Email Confirmation Token"][emailSHA512Hash][1]:
                 defaultPassword = await randomPasswordGenerator()
-                if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created", user_email, defaultPassword, FIRST_TIME_PASSWORD_EXPIRY) == "Email sent successfully!":
+                if await asyncio.to_thread(sendEmail, "New Cyberbot Admin Account Created", user_email, ctx.user.name, defaultPassword, FIRST_TIME_PASSWORD_EXPIRY) == "Email sent successfully!":
                     async with OneTimeTokenLock:
                         async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                             await file.write(json.dumps(resetTokens, indent=4))
@@ -169,7 +169,7 @@ async def remove_admin_account(ctx, accountemail: str, accountpassword: str):
                             token = ""
                             for i in range(10, 20):
                                 token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-                            if await asyncio.to_thread(sendEmail, "Admin Account Delete Confirmation Token", accountemail, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+                            if await asyncio.to_thread(sendEmail, "Admin Account Delete Confirmation Token", accountemail, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                                 resetTokens["Account Delete Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 240]
                                 await ctx.followup.send(f"For security reason, an Admin Account Delete Confirmation Token was sent to {accountemail}. Please use the command /confirm_delete_admin_account to finalize your admin account deletion!")
                                 await LoggingApplicationCommand(ctx, "/remove_admin_account", "acccountemail -> REDACT, password -> REDACT", "Denied/An Account Unregistration Confirmation Code was sent user email!")
@@ -247,7 +247,7 @@ async def confirm_delete_admin_account(ctx, accountemail: str, otp: str):
             if resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][0] == hashlib.sha1(otp.encode()).hexdigest():
                 del resetTokens["Account Delete Confirmation Token"][emailSHA512Hash]
                 if time.time() < resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][1]:
-                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", accountemail) != "Email sent unsuccessfully!":
+                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", accountemail, ctx.user.name) != "Email sent unsuccessfully!":
                         CyberBotConfigData["Admins"].pop(idx)
                         await ctx.followup.send("Your Cyberbot admin account has been deleted!")
                         print(f"User {ctx.user.name} admin account has been unregistered!\n\n")
@@ -445,7 +445,7 @@ async def request_password_reset_token(ctx, accountemail: str):
                             token = ""
                             for i in range(7, 20):
                                 token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-                            if await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", accountemail, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+                            if await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", accountemail, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                                 resetTokens["Password Reset Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 180]
                                 async with OneTimeTokenLock:
                                     async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
