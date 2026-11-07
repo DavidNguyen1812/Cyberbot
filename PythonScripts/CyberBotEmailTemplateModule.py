@@ -37,7 +37,7 @@ def buildCyberbotHTMLEmail(subject: str, user_discord_name: str, logoCID: str = 
         description = "Your CyberBot admin account has been created. Your temporary password is:"
         secret = otp
         note = "To change your password, use <strong>/request_password_reset_token</strong> followed by <strong>/change_password</strong> in Discord."
-        advisory = f"For your security, this password will expire in <strong>{otp_expiry // 60} minutes</strong>. Please change this temporary password as soon as possible. Never share it with anyone."
+        advisory = f"For your security, this password will expire in {otp_expiry // 60} minutes. Please change this temporary password as soon as possible. Never share it with anyone."
     elif subject == "Cyberbot Password Reset Token":
         description = "Use this one-time token to set a new password for your Cyberbot admin account."
         secret = otp
