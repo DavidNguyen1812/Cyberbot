@@ -582,6 +582,7 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
                                             print(f"User {ctx.user.name} just changed the admin account password!\n\n")
                                             await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/User password age not above 3 hours yet")
                                     else:
+                                        del resetTokens["Password Reset Token"][emailSHA512Hash]
                                         await ctx.followup.send(f"The Password Reset Token that you provided is expired!")
                                         print(f"Expired Password Reset Token associated with the provided email!\n\n")
                                         await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/Expired Password Reset Token")
