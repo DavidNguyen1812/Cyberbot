@@ -46,6 +46,13 @@ async def checking_expired_tokens():
                 logMessage += f"- Admin Account Delete Confirmation Token `{resetTokens["Account Delete Confirmation Token"][tokenID][0]}` for `{tokenID}` expired.\n"
                 pending_delete_tokens.append(tokenID)
 
+        logMessage += f"## Detected Admin Account Delete Cooldown\n"
+        for userID in resetTokens["Recently Delete Admin Account"]:
+            if time.time() >= resetTokens["Recently Delete Admin Account"][userID][0]:
+                print(f"Admin Account Delete Cooldown for Discord User ID {userID}")
+                logMessage += f"- Admin Account Delete Cooldown for Discord User ID `{userID}` expired.\n"
+                pending_delete_tokens.append(userID)
+
         logMessage += f"## Deleting All Expired One Time Tokens\n"
         for tokenID in pending_delete_tokens:
             print(f"Removing one time token associated with {tokenID}...")
