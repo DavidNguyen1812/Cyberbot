@@ -54,8 +54,14 @@ def buildCyberbotHTMLEmail(subject: str, user_discord_name: str, logoCID: str = 
         # CHANGED: Remove the trailing comma so description is a string, not a tuple.
         description = "You have requested an unregistration process of your Cyberbot admin account and your request has been approved!"
         secret = ""
-        note = "All data associated with the account are permanently deleted!"
+        note = ("All data associated with the account are permanently deleted!\n"
+                "IMPORTANT NOTE: You can re-register a Cyberbot Admin Account again in 7 hours!\n")
         advisory = ""
+    elif subject == "Security Notice: Attempt Admin Account Creation":
+        description = "Someone is trying to register another Cyberbot Admin Account under this email address, but Cyberbot has prevented the account creation and hide the information that an admin account already exist with this email address."
+        secret = ""
+        note = ""
+        advisory = "If you keep on receiving this email, please report to Cyberbot security team!" # You can set up another email to handle security ticket, if you wish!
     else:
         description = ""
         secret = ""
