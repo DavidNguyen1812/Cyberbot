@@ -198,7 +198,8 @@ async def analyzeAttachmentContents(RootFileName: str, RootFileTrueExt: str, fil
             try:
                 virusTotalResult = virusTotalResult.split(":")
                 virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                await sendFileScanProgress(message, RootFileName, f"Virus Total Report: {virusTotalReport}")
+                if not isSilent or int(virusTotalResult[0]) > 0 or int(virusTotalResult[1]) > 0:
+                    await sendFileScanProgress(message, RootFileName, f"Virus Total Report: {virusTotalReport}")
                 logMessage += f"- **Virus Total Scan Result:** `{virusTotalReport}`\n"
                 if int(virusTotalResult[0]) > 0:
                     print(f"One or more scan engine from Virus Total scan flagged the file content as malicious!")
@@ -339,7 +340,8 @@ async def analyzeAttachmentContents(RootFileName: str, RootFileTrueExt: str, fil
                             try:
                                 virusTotalResult = virusTotalResult.split(":")
                                 virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                                await sendFileScanProgress(message, RootFileName, f"Virus Total Report for {filename} inside file {RootFileName}: {virusTotalReport}")
+                                if not isSilent or int(virusTotalResult[0]) > 0 or int(virusTotalResult[1]) > 0:
+                                    await sendFileScanProgress(message, RootFileName, f"Virus Total Report for {filename} inside file {RootFileName}: {virusTotalReport}")
                                 logMessage += f"- **Virus Total Scan Result:** `{virusTotalReport}`\n"
                                 if int(virusTotalResult[0]) > 0:
                                     print(f"One or more scan engine from Virus Total scan flagged the file content as malicious!")
