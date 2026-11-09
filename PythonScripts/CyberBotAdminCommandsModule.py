@@ -4,7 +4,8 @@ from CyberBotRuntimeModule import *
 from CyberBotSecurityUtilitiesModule import CheckPasswordPwned, GeminiCheckCommonPassword, LoggingApplicationCommand, randomPasswordGenerator, sendEmail
 
 ONE_TIME_TOKEN_EXPIRY = 240 # Every one time token Cyberbot sent via email will be expired in 4 minutes!
-FIRST_TIME_PASSWORD_EXPIRY = 1800 # When user successfully registered an admin account, Cyberbot will generate a randam password and send to user but notify the user to change the password. The first password will have a expiry time of 30 minutes.
+FIRST_TIME_PASSWORD_EXPIRY = 1800 # When user successfully registered an admin account, Cyberbot will generate a random password and send to user but notify the user to change the password. The first password will have a expiry time of 30 minutes.
+ADMIN_ACCOUNT_DELETE_COOLDOWN = 25200 # A cooldown timer after the user delete their admin account before they can recreate a new one again.
 
 @Cyberbot.tree.command(
     name="create_admin_account",
@@ -24,51 +25,58 @@ async def create_admin_account(ctx, user_email: str):
         if admin["User ID"] == ctx.user.id:
             accountExist = True
         if admin["User Email"] == emailSHA512Hash:
+            user = Cyberbot.get_user(admin["User ID"])
+            await asyncio.to_thread(sendEmail, "Security Notice: Attempt Admin Account Creation", user_email, user.name)
             emailTaken = True
     async with OneTimeTokenLock:
         async with aiofiles.open(ONE_TIME_TOKEN_PATH, "r") as file:
             resetTokens = json.loads(await file.read())
-    if emailSHA512Hash in resetTokens["Email Confirmation Token"] or str(ctx.user.id) in resetTokens["Email Confirmation Token"]:
-        await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/An Email Confirmation Token that still valid already sent to the user email!")
-        await ctx.followup.send(f"You have already request an admin account registration and a {ONE_TIME_TOKEN_EXPIRY // 60} minutes Admin Account Email Verification Code was sent to the email! Please confirm your email using the command /confirm_admin_account_creation with the code or wait until the code expired to request a new one again using this command!")
-        print(f"A valid OTP code already sent to email {emailSHA512Hash}\n\n")
+    if str(ctx.user.id) in resetTokens["Recently Delete Admin Account"]:
+        await ctx.followup.send(f"You just delete your previous Cyberbot Admin Account! Please wait for {ADMIN_ACCOUNT_DELETE_COOLDOWN // 60} minutes to recreate another Cyberbot Admin Account again!")
+        print(f"User just delete their Cyberbot Admin Account\n\n")
+        await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/User just delete their previous Cyberbot Admin Account!")
     else:
-        if not accountExist:
-            token = ""
-            for i in range(10, 20):
-                token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-            if emailTaken:
-                sendMessage = f"Please confirm your email using the command /confirm_admin_account_creation with the OTP code sent at {user_email}!"
-                print("Email address already associated with a different admin account!\n\n")
-                resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
-                resetTokens["Email Confirmation Token"][str(ctx.user.id)] = [emailSHA512Hash, time.time() + ONE_TIME_TOKEN_EXPIRY] # Locked the email the user requested with their Discord unique User ID, this prevents a user from abusing this command and make Cyberbot sending Email Confirmation Token email to other emails that a malicious user provided!
-                async with OneTimeTokenLock:
-                    async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
-                        await file.write(json.dumps(resetTokens, indent=4))
-                await LoggingApplicationCommand(ctx, f"/create_admin_account", f"user_email -> REDACTED", "Denied/Email address already taken by other user admin account!")
-            else:
-                if await asyncio.to_thread(sendEmail, "Email Verification Code", user_email, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+        if emailSHA512Hash in resetTokens["Email Confirmation Token"] or str(ctx.user.id) in resetTokens["Email Confirmation Token"]:
+            await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/An Email Confirmation Token that still valid already sent to the user email!")
+            await ctx.followup.send(f"You have already request an admin account registration and a {ONE_TIME_TOKEN_EXPIRY // 60} minutes Admin Account Email Verification Code was sent to the email! Please confirm your email using the command /confirm_admin_account_creation with the code or wait until the code expired to request a new one again using this command!")
+            print(f"A valid OTP code already sent to email {emailSHA512Hash}\n\n")
+        else:
+            if not accountExist:
+                token = ""
+                for i in range(10, 20):
+                    token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
+                if emailTaken:
+                    sendMessage = f"Please confirm your email using the command /confirm_admin_account_creation with the OTP code sent at {user_email}!"
+                    print("Email address already associated with a different admin account!\n\n")
                     resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
                     resetTokens["Email Confirmation Token"][str(ctx.user.id)] = [emailSHA512Hash, time.time() + ONE_TIME_TOKEN_EXPIRY] # Locked the email the user requested with their Discord unique User ID, this prevents a user from abusing this command and make Cyberbot sending Email Confirmation Token email to other emails that a malicious user provided!
                     async with OneTimeTokenLock:
                         async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                             await file.write(json.dumps(resetTokens, indent=4))
-                    sendMessage = f"Please confirm your email using the command /confirm_admin_account_creation with the OTP code sent at {user_email}!"
-                    print(f"New Email OTP code sent to {user_email}\n\n")
-                    await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Approved/An Email Confirmation Token was sent to the user email!")
+                    await LoggingApplicationCommand(ctx, f"/create_admin_account", f"user_email -> REDACTED", "Denied/Email address already taken by other user admin account!")
                 else:
-                    sendMessage = f"Cyberbot can't register a new admin account with the email address: {user_email}"
-                    print(f"Error sending email!\n\n")
-                    await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/Error sending email!")
-            commandElapsedTime = time.monotonic() - commandStartTime
-            await asyncio.sleep(3 - commandElapsedTime) # To prevent a Discord user from enumerate existing admin account email, Cyberbot will response to this with scenario as if the email does not taken yet and ensure a constant time of 3 seconds with the scenario that the account does not exist
-            await ctx.followup.send(sendMessage)
-        else:
-            await ctx.followup.send(f"You already have a valid registered Cyberbot admin account!\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!")
-            print(f"User already have a valid registered Cyberbot admin account!\n\n")
-            await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/User already have a Cyberbot admin account!")
-    token = None
-    resetTokens = None
+                    if await asyncio.to_thread(sendEmail, "Email Verification Code", user_email, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+                        resetTokens["Email Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + ONE_TIME_TOKEN_EXPIRY]
+                        resetTokens["Email Confirmation Token"][str(ctx.user.id)] = [emailSHA512Hash, time.time() + ONE_TIME_TOKEN_EXPIRY] # Locked the email the user requested with their Discord unique User ID, this prevents a user from abusing this command and make Cyberbot sending Email Confirmation Token email to other emails that a malicious user provided!
+                        async with OneTimeTokenLock:
+                            async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
+                                await file.write(json.dumps(resetTokens, indent=4))
+                        sendMessage = f"Please confirm your email using the command /confirm_admin_account_creation with the OTP code sent at {user_email}!"
+                        print(f"New Email OTP code sent to {user_email}\n\n")
+                        await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Approved/An Email Confirmation Token was sent to the user email!")
+                    else:
+                        sendMessage = f"Cyberbot can't register a new admin account with the email address: {user_email}"
+                        print(f"Error sending email!\n\n")
+                        await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/Error sending email!")
+                commandElapsedTime = time.monotonic() - commandStartTime
+                await asyncio.sleep(3 - commandElapsedTime) # To prevent a Discord user from enumerate existing admin account email, Cyberbot will response to this with scenario as if the email does not taken yet and ensure a constant time of 3 seconds with the scenario that the account does not exist
+                await ctx.followup.send(sendMessage)
+            else:
+                await ctx.followup.send(f"You already have a valid registered Cyberbot admin account!\nIf you want to change your password, use command /request_password_reset_token and /change_password with Cyberbot!")
+                print(f"User already have a valid registered Cyberbot admin account!\n\n")
+                await LoggingApplicationCommand(ctx, "/create_admin_account", f"user_email -> REDACTED", "Denied/User already have a Cyberbot admin account!")
+        token = None
+        resetTokens = None
     user_email = None
 
 
@@ -152,18 +160,18 @@ async def confirm_admin_account_creation(ctx, user_email: str, otp: str):
     description="Removing a Cyberbot admin account"
 )
 @app_commands.describe(
-    accountemail="Please provide a valid email address associated with your admin account",
-    accountpassword="Please provide the password associated with your account"
+    account_email="Please provide a valid email address associated with your admin account",
+    account_password="Please provide the password associated with your account"
 )
-async def remove_admin_account(ctx, accountemail: str, accountpassword: str):
+async def remove_admin_account(ctx, account_email: str, account_password: str):
     print(f"User {ctx.user.name} initiated /remove_admin_account command")
     await ctx.response.defer(ephemeral=True)
     try:
-        emailSHA512Hash = hashlib.sha512(accountemail.encode()).hexdigest()
+        emailSHA512Hash = hashlib.sha512(account_email.encode()).hexdigest()
         for adminAccount in CyberBotConfigData["Admins"]:
             if adminAccount["User ID"] == ctx.user.id:
                 if time.time() > adminAccount["Current Account Locked Out Period"]:
-                    if adminAccount["User Email"] == emailSHA512Hash and bcrypt.checkpw(f"{accountpassword}{ctx.user.id}".encode(), adminAccount["User Credential"].encode()):
+                    if adminAccount["User Email"] == emailSHA512Hash and bcrypt.checkpw(f"{account_password}{ctx.user.id}".encode(), adminAccount["User Credential"].encode()):
                         adminAccount["Failed Log In Attempts"] = 0
                         if time.time() < adminAccount["Credential Expiration Age"]:
                             async with OneTimeTokenLock:
@@ -173,33 +181,33 @@ async def remove_admin_account(ctx, accountemail: str, accountpassword: str):
                                 token = ""
                                 for i in range(10, 20):
                                     token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-                                if await asyncio.to_thread(sendEmail, "Admin Account Delete Confirmation Token", accountemail, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+                                if await asyncio.to_thread(sendEmail, "Admin Account Delete Confirmation Token", account_email, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                                     resetTokens["Account Delete Confirmation Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 240]
                                     async with OneTimeTokenLock:
                                         async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                                             await file.write(json.dumps(resetTokens, indent=4))
-                                    await ctx.followup.send(f"For security reason, an Admin Account Delete Confirmation Token was sent to {accountemail}. Please use the command /confirm_delete_admin_account to finalize your admin account deletion!")
+                                    await ctx.followup.send(f"For security reason, an Admin Account Delete Confirmation Token was sent to {account_email}. Please use the command /confirm_delete_admin_account to finalize your admin account deletion!")
                                     await LoggingApplicationCommand(ctx, "/remove_admin_account", "acccountemail -> REDACT, password -> REDACT", "Denied/An Account Unregistration Confirmation Code was sent user email!")
                                 else:
                                     await ctx.followup.send("Cyberbot can not send the unregistration confirmation email to you! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
                                     print(f"Error sending email!\n\n")
-                                    await LoggingApplicationCommand(ctx, "/remove_admin_account", "accountemail -> REDACT, password -> REDACT", "Denied/Cyberbot can not send Account Unregistration Confirmation Code to user email!")
+                                    await LoggingApplicationCommand(ctx, "/remove_admin_account", "account_email -> REDACT, password -> REDACT", "Denied/Cyberbot can not send Account Unregistration Confirmation Code to user email!")
                             else:
                                 await ctx.followup.send(f"You just requested a {ONE_TIME_TOKEN_EXPIRY // 60} minutes Admin Account Delete Confirmation Token. Please check your email for it or wait until the token expired to request a new one again!")
                                 print(f"A still valid Admin Account Delete Confirmation Token already sent!\n\n")
-                                await LoggingApplicationCommand(ctx, "/remove_admin_account", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/An Admin Account Delete Confirmation Token already sent to the user email!")
+                                await LoggingApplicationCommand(ctx, "/remove_admin_account", f"account_email -> REDACT, account_password -> REDACT", "Denied/An Admin Account Delete Confirmation Token already sent to the user email!")
                             resetTokens = None
                         else:
                             await ctx.followup.send("Your password has expired. Please use /request_password_reset_token and /change_password to update your password!")
                             print(f"User {ctx.user.name} password expired!\n\n")
-                            await LoggingApplicationCommand(ctx, "/remove_admin_account", "accountemail -> REDACT, password -> REDACT", "Denied/Expired Password")
+                            await LoggingApplicationCommand(ctx, "/remove_admin_account", "account_email -> REDACT, password -> REDACT", "Denied/Expired Password")
                     else:
                         adminAccount["Failed Log In Attempts"] += 1
                         adminAccount["Total Failed Log In Attempts"] += 1
                         if adminAccount["Failed Log In Attempts"] % 7 != 0:
                             await ctx.followup.send(f"Invalid user email or password!!!\nYou have {7 - adminAccount["Failed Log In Attempts"] % 7} attempts left to authenticate!")
                             print(f"User {ctx.user.name} input invalid credentials!\n\n")
-                            await LoggingApplicationCommand(ctx, "/remove_admin_account", "accountemail -> REDACT, password -> REDACT", "Denied/Bad Credentials")
+                            await LoggingApplicationCommand(ctx, "/remove_admin_account", "account_email -> REDACT, password -> REDACT", "Denied/Bad Credentials")
                         else:
                             adminAccount["Failed Log In Attempts"] = 0
                             adminAccount["Locked Out History"].append(time.ctime(time.time()))
@@ -212,7 +220,7 @@ async def remove_admin_account(ctx, accountemail: str, accountpassword: str):
                                 pass
                             await ctx.followup.send("Too many failed authentication attempts! Your admin account has been locked for 3 hours!")
                             print(f"User {ctx.user.name} input too many invalid authentication attempts, initiating admin account lock out!\n\n")
-                            await LoggingApplicationCommand(ctx, "/remove_admin_account", "accountemail -> REDACT, password -> REDACT", "Denied/Too Many Bad Credentials Attempts and account has been locked!")
+                            await LoggingApplicationCommand(ctx, "/remove_admin_account", "account_email -> REDACT, password -> REDACT", "Denied/Too Many Bad Credentials Attempts and account has been locked!")
                     async with ConfigLock:
                         async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
                             await file.write(json.dumps(CyberBotConfigData, indent=4))
@@ -221,14 +229,14 @@ async def remove_admin_account(ctx, accountemail: str, accountpassword: str):
                     minutes_remaining = round(float(f".{str(hours_remaining).split('.')[1]}") * 60)
                     await ctx.followup.send(f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
                     print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
-                    await LoggingApplicationCommand(ctx, "/remove_admin_account", "accountemail -> REDACT, password -> REDACT", "Denied/Admin account currently locked!")
+                    await LoggingApplicationCommand(ctx, "/remove_admin_account", "account_mail -> REDACT, password -> REDACT", "Denied/Admin account currently locked!")
                 return
         await ctx.followup.send(f"You do not have a Cyberbot admin account yet! If you want to register one, use command /create_admin_account to register a new Cyberbot admin account!")
         print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
-        await LoggingApplicationCommand(ctx, "/remove_admin_account", "accountemail -> REDACT, password -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
+        await LoggingApplicationCommand(ctx, "/remove_admin_account", "account_email -> REDACT, password -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
     finally:
-        accountemail = None
-        accountpassword = None
+        account_email = None
+        account_password = None
 
 
 @Cyberbot.tree.command(
@@ -236,13 +244,13 @@ async def remove_admin_account(ctx, accountemail: str, accountpassword: str):
     description="Confirm to finalize the deletion of a Cyberbot admin account"
 )
 @app_commands.describe(
-    accountemail="Please provide a valid email address associated with your admin account",
+    account_email="Please provide a valid email address associated with your admin account",
     otp="Please provide a valid Admin Account Delete Confirmation Token!"
 )
-async def confirm_delete_admin_account(ctx, accountemail: str, otp: str):
+async def confirm_delete_admin_account(ctx, account_email: str, otp: str):
     print(f"User {ctx.user.name} initiated /confirm_delete_admin_account command")
     await ctx.response.defer(ephemeral=True)
-    emailSHA512Hash = hashlib.sha512(accountemail.encode()).hexdigest()
+    emailSHA512Hash = hashlib.sha512(account_email.encode()).hexdigest()
     idx = 0
     accountExist = False
     for adminAccount in CyberBotConfigData["Admins"]:
@@ -258,40 +266,41 @@ async def confirm_delete_admin_account(ctx, accountemail: str, otp: str):
             if resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][0] == hashlib.sha1(otp.encode()).hexdigest():
                 tokenExpiry = resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][1]
                 del resetTokens["Account Delete Confirmation Token"][emailSHA512Hash]
-                async with OneTimeTokenLock:
-                    async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
-                        await file.write(json.dumps(resetTokens, indent=4))
                 if time.time() < tokenExpiry:
-                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", accountemail, ctx.user.name) != "Email sent unsuccessfully!":
+                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", account_email, ctx.user.name) != "Email sent unsuccessfully!":
                         CyberBotConfigData["Admins"].pop(idx)
+                        resetTokens["Recently Delete Admin Account"][str(ctx.user.id)] = [time.time() + ADMIN_ACCOUNT_DELETE_COOLDOWN]
                         async with ConfigLock:
                             async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
                                 await file.write(json.dumps(CyberBotConfigData, indent=4))
                         await ctx.followup.send("Your Cyberbot admin account has been deleted!")
                         print(f"User {ctx.user.name} admin account has been unregistered!\n\n")
-                        await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"accountemail -> REDACT, otp -> {otp}", "Approved/User admin account deleted!")
+                        await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"account_email -> REDACT, otp -> {otp}", "Approved/User admin account deleted!")
                     else:
                         await ctx.followup.send("Cyberbot can not send the account deletion confirmation email to you! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
                         print(f"Error sending email!\n\n")
-                        await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"accountemail -> REDACT, otp -> {otp}", "Denied/Cyberbot can not send Account Deletion Confirmation email to user email!")
+                        await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"account_email -> REDACT, otp -> {otp}", "Denied/Cyberbot can not send Account Deletion Confirmation email to user email!")
                 else:
                     await ctx.followup.send(f"The Admin Account Delete Confirmation Token that you provided expired. Please use command /remove_admin_account to obtain a new one again!")
                     print(f"Expired Admin Account Delete Confirmation Token associated with the provided email!\n\n")
-                    await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"accountemail -> REDACT, otp -> {otp}", "Denied/Expired Admin Account Delete Confirmation Code!")
+                    await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"account_email -> REDACT, otp -> {otp}", "Denied/Expired Admin Account Delete Confirmation Code!")
+                async with OneTimeTokenLock:
+                    async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
+                        await file.write(json.dumps(resetTokens, indent=4))
             else:
                 await ctx.followup.send(f"The Admin Account Delete Confirmation Token that you provided is invalid!")
                 print(f"Invalid Admin Account Delete Confirmation Token associated with the provided email!\n\n")
-                await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"accountemail -> REDACT, otp -> {otp}", "Denied/Invalid Admin Account Delete Confirmation Code!")
+                await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"account_email -> REDACT, otp -> {otp}", "Denied/Invalid Admin Account Delete Confirmation Code!")
         else:
-            await ctx.followup.send(f"There is no Admin Account Delete Confirmation Token associated with the provided email {accountemail}. Please use command /remove_admin_account to obtain one!")
+            await ctx.followup.send(f"There is no Admin Account Delete Confirmation Token associated with the provided email {account_email}. Please use command /remove_admin_account to obtain one!")
             print(f"No Admin Account Delete Confirmation Token associated with the provided email!\n\n")
-            await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"accountemail -> REDACT, otp -> {otp}", "Denied/No Admin Account Delete Confirmation Token associated with the provided email!")
+            await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"account_email -> REDACT, otp -> {otp}", "Denied/No Admin Account Delete Confirmation Token associated with the provided email!")
         resetTokens = None
-        accountemail = None
+        account_email = None
     else:
         await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
         print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
-        await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"accountemail -> REDACT, otp -> {otp}", "Denied/User does not have a Cyberbot admin account yet!")
+        await LoggingApplicationCommand(ctx, "/confirm_delete_admin_account", f"account_email -> REDACT, otp -> {otp}", "Denied/User does not have a Cyberbot admin account yet!")
 
 
 # Command for server owner and in non-DM with Cyberbot ONLY!!
@@ -441,12 +450,12 @@ async def removing_admins(ctx, member: discord.Member):
     description="Request a new password reset token"
 )
 @app_commands.describe(
-    accountemail="Please provide a valid email address associated with your admin account",
+    account_email="Please provide a valid email address associated with your admin account",
 )
-async def request_password_reset_token(ctx, accountemail: str):
+async def request_password_reset_token(ctx, account_email: str):
     print(f"User {ctx.user.name} initiated /request_password_reset_token command")
     await ctx.response.defer(ephemeral=True)
-    emailSHA512Hash = hashlib.sha512(accountemail.encode()).hexdigest()
+    emailSHA512Hash = hashlib.sha512(account_email.encode()).hexdigest()
     for adminAccount in CyberBotConfigData["Admins"]:
         if ctx.user.id == adminAccount["User ID"]:
             if time.time() > adminAccount["Current Account Locked Out Period"]:
@@ -458,43 +467,43 @@ async def request_password_reset_token(ctx, accountemail: str):
                         if emailSHA512Hash in resetTokens["Password Reset Token"]:
                             await ctx.followup.send(f"You just requested a {ONE_TIME_TOKEN_EXPIRY // 60} minutes Password Reset OTP code. Please check your email for it or wait until the token expired to request a new one again!")
                             print(f"A still valid Password Reset OTP code already sent!\n\n")
-                            await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Denied/A Password Reset Token already sent to the user email!")
+                            await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"account_email -> REDACT", "Denied/A Password Reset Token already sent to the user email!")
                         else:
                             token = ""
                             for i in range(7, 20):
                                 token += random.choice(f"ABCDEFGHIJKLNMOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@#$%&*_+=")
-                            if await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", accountemail, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
+                            if await asyncio.to_thread(sendEmail, "Cyberbot Password Reset Token", account_email, ctx.user.name, token, ONE_TIME_TOKEN_EXPIRY) == "Email sent successfully!":
                                 resetTokens["Password Reset Token"][emailSHA512Hash] = [hashlib.sha1(token.encode()).hexdigest(), time.time() + 180]
                                 async with OneTimeTokenLock:
                                     async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
                                         await file.write(json.dumps(resetTokens, indent=4))
-                                await ctx.followup.send(f"Please check your email {accountemail}!")
+                                await ctx.followup.send(f"Please check your email {account_email}!")
                                 print(f"A new reset token has been sent to user {ctx.user.name} via email {emailSHA512Hash}!\n\n")
-                                await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Approved/A reset token has been sent to user email!")
+                                await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"account_email -> REDACT", "Approved/A reset token has been sent to user email!")
                             else:
-                                await ctx.followup.send(f"Cyberbot can't send the password reset OTP code to your account email {accountemail}! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
+                                await ctx.followup.send(f"Cyberbot can't send the password reset OTP code to your account email {account_email}! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
                                 print(f"Can not send email!\n\n")
-                                await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Denied/Cyberbot can not send the password reset OTP to user email!")
+                                await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"account_email -> REDACT", "Denied/Cyberbot can not send the password reset OTP to user email!")
                         resetTokens = None
-                        accountemail = None
+                        account_email = None
                     else:
                         await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
                         print(f"User {ctx.user.name} just changed the admin account password!\n\n")
-                        await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Denied/User password age not above 3 hours yet")
+                        await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"account_email -> REDACT", "Denied/User password age not above 3 hours yet")
                 else:
                     await ctx.followup.send(f"Your provided email address does not match the email that you used to register your admin account!")
                     print(f"Wrong email address!\n\n")
-                    await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Denied/User provide invalid email address!")
+                    await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"account_email -> REDACT", "Denied/User provide invalid email address!")
             else:
                 hours_remaining = (adminAccount["Current Account Locked Out Period"] - time.time()) / 3600
                 minutes_remaining = round(float(f".{str(hours_remaining).split('.')[1]}") * 60)
                 await ctx.followup.send(f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
                 print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
-                await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Denied/Admin account locked!")
+                await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"account_email -> REDACT", "Denied/Admin account locked!")
             return
     await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
     print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
-    await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"accountemail -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
+    await LoggingApplicationCommand(ctx, "/request_password_reset_token", f"account_email -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
 
 
 # Command for user with registered admin account
@@ -503,15 +512,15 @@ async def request_password_reset_token(ctx, accountemail: str):
     description="Update your admin account password!"
 )
 @app_commands.describe(
-    passwordresettoken="Please provide a valid password reset token sent to your email",
-    accountemail="Please provide a valid email address associated with your admin account",
-    newpassword="Please provide a new password for your account"
+    password_reset_token="Please provide a valid password reset token sent to your email",
+    account_email="Please provide a valid email address associated with your admin account",
+    new_password="Please provide a new password for your account"
 )
-async def change_password(ctx, passwordresettoken: str, accountemail: str, newpassword: str):
+async def change_password(ctx, password_reset_token: str, account_email: str, new_password: str):
     print(f"User {ctx.user.name} initiated /change_password command")
     await ctx.response.defer(ephemeral=True)
     try:
-        emailSHA512Hash = hashlib.sha512(accountemail.encode()).hexdigest()
+        emailSHA512Hash = hashlib.sha512(account_email.encode()).hexdigest()
         for adminAccount in CyberBotConfigData["Admins"]:
             if ctx.user.id == adminAccount["User ID"]:
                 if time.time() > adminAccount["Current Account Locked Out Period"]:
@@ -521,28 +530,28 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
                                 async with aiofiles.open(ONE_TIME_TOKEN_PATH, "r") as file:
                                     resetTokens = json.loads(await file.read())
                             if emailSHA512Hash in resetTokens["Password Reset Token"]:
-                                if resetTokens["Password Reset Token"][emailSHA512Hash][0] == hashlib.sha1(passwordresettoken.encode()).hexdigest():
+                                if resetTokens["Password Reset Token"][emailSHA512Hash][0] == hashlib.sha1(password_reset_token.encode()).hexdigest():
                                     if time.time() < resetTokens["Password Reset Token"][emailSHA512Hash][1]:
                                         if time.time() >= adminAccount["Credential Minimum Age"]:
                                             update = True
                                             salt = adminAccount["User Salt"].encode()
-                                            hashednewpassword = bcrypt.hashpw(f"{newpassword}{ctx.user.id}".encode(), salt).decode('utf-8')
-                                            if len(newpassword) > 40:
+                                            hashednewpassword = bcrypt.hashpw(f"{new_password}{ctx.user.id}".encode(), salt).decode('utf-8')
+                                            if len(new_password) > 40:
                                                 await ctx.followup.send("Your new password is too long!")
                                                 print(f"User {ctx.user.name} new password too long!\n\n")
                                                 update = False
-                                                await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> {newpassword}", f"Denied/Password too long!")
+                                                await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> {new_password}", f"Denied/Password too long!")
                                             elif hashednewpassword == adminAccount["User Credential"]:
                                                 await ctx.followup.send("Your new password is the same as your old password!")
                                                 print(f"User {ctx.user.name} reused password!\n\n")
                                                 update = False
-                                                await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", f"Denied/Password is the same as the old one!")
+                                                await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", f"Denied/Password is the same as the old one!")
                                             elif hashednewpassword in adminAccount["Previous Credentials Used"]:
                                                 await ctx.followup.send("You have used this password before, please set a new password!")
                                                 print(f"User {ctx.user.name} reused password!\n\n")
                                                 update = False
-                                                await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", f"Denied/Password already been used from the past!")
-                                            elif None in [re.search(r'[a-z]', newpassword), re.search(r'[A-Z]', newpassword), re.search(r'\d', newpassword), re.search(r'[!@#$%&*_+=]', newpassword)] or len(newpassword) < 12:
+                                                await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", f"Denied/Password already been used from the past!")
+                                            elif None in [re.search(r'[a-z]', new_password), re.search(r'[A-Z]', new_password), re.search(r'\d', new_password), re.search(r'[!@#$%&*_+=]', new_password)] or len(new_password) < 12:
                                                 await ctx.followup.send("Your new password password must be:\n"
                                                                         "At least 12 characters\n"
                                                                         "Have mixed case ASCII letters and numbers\n"
@@ -550,31 +559,31 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
                                                                         "Please provide a different password")
                                                 print(f"User {ctx.user.name} new password not match the password policy!\n\n")
                                                 update = False
-                                                await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> {newpassword}", f"Denied/Password does not match the password policy")
-                                            elif await CheckPasswordPwned(newpassword):
+                                                await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> {new_password}", f"Denied/Password does not match the password policy")
+                                            elif await CheckPasswordPwned(new_password):
                                                 await ctx.followup.send("The new password that you want to set was detected to already existed in a data breach database, please choose a different password!")
                                                 print(f"User {ctx.user.name} new password existed in data breach database!\n\n")
                                                 update = False
-                                                await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> {newpassword}", f"Denied/New Password existed in a data breach database")
+                                                await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> {new_password}", f"Denied/New Password existed in a data breach database")
                                             else:
-                                                passwordStrength, probability = await asyncio.to_thread(Prediction, newpassword, BERTtokenizer, BERTPasswordClassifier, "Password Strength", hardware.lower())
+                                                passwordStrength, probability = await asyncio.to_thread(Prediction, new_password, BERTtokenizer, BERTPasswordClassifier, "Password Strength", hardware.lower())
                                                 if passwordStrength < 3 and probability > 0.5:
                                                     await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier BERT encoder-transformer flagged as weak password!\nPlease provide a different password")
                                                     print(f"User {ctx.user.name} new password flagged weak by BERT model!\n\n")
                                                     update = False
-                                                    await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> {newpassword}", f"Denied/BERT model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
+                                                    await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> {new_password}", f"Denied/BERT model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
                                                 else:
-                                                    passwordStrength, probability = await asyncio.to_thread(Prediction, newpassword, AllenAItokenizer, AllenAIPasswordClassifier, "Password Strength", hardware.lower())
+                                                    passwordStrength, probability = await asyncio.to_thread(Prediction, new_password, AllenAItokenizer, AllenAIPasswordClassifier, "Password Strength", hardware.lower())
                                                     if passwordStrength < 3 and probability > 0.5:
                                                         await ctx.followup.send("Your new password contains patterns that Cyberbot pre-trained weak password classifier Allen AI encoder-transformer flagged as weak password!\nPlease provide a different password")
                                                         print(f"User {ctx.user.name} new password flagged weak by Allen AI model!\n\n")
                                                         update = False
-                                                        await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> {newpassword}", f" Denied/Allen AI model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
-                                                    elif await GeminiCheckCommonPassword(newpassword):
+                                                        await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> {new_password}", f" Denied/Allen AI model detected password strength at level {passwordStrength} out of 5 levels ranking system with probability value of {f"{probability}"}")
+                                                    elif await GeminiCheckCommonPassword(new_password):
                                                         await ctx.followup.send("Your new password contains keywords easy to guess or already in a common used password list!\nPlease provide a different password")
                                                         print(f"User {ctx.user.name} new password too common and easy to guess!\n\n")
                                                         update = False
-                                                        await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> {newpassword}", "Denied/Password too common and easy to guess")
+                                                        await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> {new_password}", "Denied/Password too common and easy to guess")
 
                                             if update:
                                                 del resetTokens["Password Reset Token"][emailSHA512Hash]
@@ -589,14 +598,14 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
                                                 async with ConfigLock:
                                                     async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
                                                         await file.write(json.dumps(CyberBotConfigData, indent=4))
-                                                await ctx.followup.send(f"Your password has been updated to {newpassword}\nAll of your previous admin log in sessions had been terminated!")
+                                                await ctx.followup.send(f"Your password has been updated to {new_password}\nAll of your previous admin log in sessions had been terminated!")
                                                 print(f"User {ctx.user.name} admin account updated successfully!\n\n")
-                                                await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Approved/Admin account password updated")
+                                                await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Approved/Admin account password updated")
                                                 return
                                         else:
                                             await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
                                             print(f"User {ctx.user.name} just changed the admin account password!\n\n")
-                                            await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/User password age not above 3 hours yet")
+                                            await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Denied/User password age not above 3 hours yet")
                                     else:
                                         del resetTokens["Password Reset Token"][emailSHA512Hash]
                                         async with OneTimeTokenLock:
@@ -604,38 +613,38 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
                                                 await file.write(json.dumps(resetTokens, indent=4))
                                         await ctx.followup.send(f"The Password Reset Token that you provided is expired!")
                                         print(f"Expired Password Reset Token associated with the provided email!\n\n")
-                                        await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/Expired Password Reset Token")
+                                        await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_mail -> REDACT, new_password -> REDACT", "Denied/Expired Password Reset Token")
                                 else:
                                     await ctx.followup.send(f"The Password Reset Token that you provided is invalid!")
                                     print(f"Invalid Password Reset Token associated with the provided email!\n\n")
-                                    await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/Invalid Password Reset Token")
+                                    await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Denied/Invalid Password Reset Token")
                             else:
                                 await ctx.followup.send(f"You have not request a password reset token yet or the token is expired! Please use the command /request_password_reset_token to request one!")
                                 print(f"User {ctx.user.name} did not request a password reset token yet!\n\n")
-                                await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/No Password Reset Token Request Yet")
+                                await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Denied/No Password Reset Token Request Yet")
                             resetTokens = None
                         else:
                             await ctx.followup.send("Your email address is wrong!")
                             print(f"User {ctx.user.name} provided wrong email address!\n\n")
-                            await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/Wrong Email Address")
+                            await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Denied/Wrong Email Address")
                     else:
                         await ctx.followup.send(f"You just changed your password. Your password must have a minimum age of 3 hours in order to be able to be changed again!")
                         print(f"User {ctx.user.name} just changed the admin account password!\n\n")
-                        await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/User password age not above 3 hours yet")
+                        await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Denied/User password age not above 3 hours yet")
                 else:
                     hours_remaining = (adminAccount["Current Account Locked Out Period"] - time.time()) / 3600
                     minutes_remaining = round(float(f".{str(hours_remaining).split('.')[1]}") * 60)
                     await ctx.followup.send(f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
                     print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
-                    await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/Admin account locked!")
+                    await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Denied/Admin account locked!")
                 return
         await ctx.followup.send(f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
         print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
-        await LoggingApplicationCommand(ctx, "/change_password", f"passwordresettoken -> {passwordresettoken}, accountemail -> REDACT, newpassword -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
+        await LoggingApplicationCommand(ctx, "/change_password", f"password_reset_token -> {password_reset_token}, account_email -> REDACT, new_password -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
     finally:
-        passwordresettoken = None
-        accountemail = None
-        newpassword = None
+        password_reset_token = None
+        account_email = None
+        new_password = None
 
 
 # Command for Admins and in non-DM with Cyberbot ONLY!
@@ -645,18 +654,18 @@ async def change_password(ctx, passwordresettoken: str, accountemail: str, newpa
 )
 @app_commands.guild_only()
 @app_commands.describe(
-    accountemail="Please provide a valid email address associated with your admin account",
-    accountpassword="Please provide the password associated with your account"
+    account_email="Please provide a valid email address associated with your admin account",
+    account_password="Please provide the password associated with your account"
 )
-async def admin_log_in(ctx, accountemail: str, accountpassword: str):
+async def admin_log_in(ctx, account_email: str, account_password: str):
     print(f"User {ctx.user.name} initiated /admin_log_in command")
     await ctx.response.defer(ephemeral=True)
     try:
-        emailSHA512Hash = hashlib.sha512(accountemail.encode()).hexdigest()
+        emailSHA512Hash = hashlib.sha512(account_email.encode()).hexdigest()
         if str(ctx.channel.type).startswith("private"):
             await ctx.followup.send("/admin_log_in can only be used in server channels!")
             print(f"Command forbidden to execute in DM channel!\n\n")
-            await LoggingApplicationCommand(ctx, "/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/Command runs in DM channel")
+            await LoggingApplicationCommand(ctx, "/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/Command runs in DM channel")
         else:
             for adminAccount in CyberBotConfigData["Admins"]:
                 if adminAccount["User ID"] == ctx.user.id:
@@ -665,10 +674,10 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
                             if time.time() < adminAccount["Current Admin Session Period"][str(ctx.guild.id)]:
                                 await ctx.followup.send("You already logged in! If you want to log out, please use the command /admin_log_out")
                                 print(f"User {ctx.user.name} already logged in as an admin in the server!\n\n")
-                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/User already logged in")
+                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/User already logged in")
                                 return
                         salt = adminAccount["User Salt"].encode()
-                        hashedPassword = bcrypt.hashpw(f"{accountpassword}{ctx.user.id}".encode(), salt).decode('utf-8')
+                        hashedPassword = bcrypt.hashpw(f"{account_password}{ctx.user.id}".encode(), salt).decode('utf-8')
                         if adminAccount["User Email"] == emailSHA512Hash and adminAccount["User Credential"] == hashedPassword:
                             adminAccount["Failed Log In Attempts"] = 0
                             if time.time() < adminAccount["Credential Expiration Age"]:
@@ -677,22 +686,22 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
                                     adminAccount["Last Time Logged In"] = time.ctime(time.time())
                                     await ctx.followup.send("Cyberbot will now recognize you as an admin for 1 hour in this server before requiring you to log in again!")
                                     print(f"User {ctx.user.name} logged in as an admin in the server!\n\n")
-                                    await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", f"Approved/New 1 hour admin session with admin account {adminAccount['User ID']} in server {ctx.guild.name} ID {ctx.user.id} created")
+                                    await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", f"Approved/New 1 hour admin session with admin account {adminAccount['User ID']} in server {ctx.guild.name} ID {ctx.user.id} created")
                                 else:
                                     await ctx.followup.send(f"Your admin account is not permitted to access in this server, please contact the server owner {ctx.guild.owner.name} to give you admin account access to the server!")
                                     print(f"User {ctx.user.name} does not have admin account access to the server!\n\n")
-                                    await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", f"Denied/User does not have admin account access to the server!")
+                                    await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", f"Denied/User does not have admin account access to the server!")
                             else:
                                 await ctx.followup.send("Your password has expired. Please use /request_password_reset_token and /change_password to update your password!")
                                 print(f"User {ctx.user.name} password expired!\n\n")
-                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/Expired Password")
+                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/Expired Password")
                         else:
                             adminAccount["Failed Log In Attempts"] += 1
                             adminAccount["Total Failed Log In Attempts"] += 1
                             if adminAccount["Failed Log In Attempts"] % 7 != 0:
                                 await ctx.followup.send(f"Invalid user email or password!!!\nYou have {7 - adminAccount["Failed Log In Attempts"] % 7} attempts left to log in!")
                                 print(f"User {ctx.user.name} input invalid credentials!\n\n")
-                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/Bad Credentials")
+                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/Bad Credentials")
                             else:
                                 adminAccount["Failed Log In Attempts"] = 0
                                 adminAccount["Locked Out History"].append(time.ctime(time.time()))
@@ -705,7 +714,7 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
                                     pass
                                 await ctx.followup.send("Too many failed login attempts! Your admin account has been locked for 3 hours!")
                                 print(f"User {ctx.user.name} input too many invalid log in attempts, initiating admin account lock out!\n\n")
-                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/Too Many Bad Credentials and account has been locked!")
+                                await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/Too Many Bad Credentials and account has been locked!")
                         async with ConfigLock:
                             async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
                                 await file.write(json.dumps(CyberBotConfigData, indent=4))
@@ -714,14 +723,14 @@ async def admin_log_in(ctx, accountemail: str, accountpassword: str):
                         minutes_remaining = round(float(f".{str(hours_remaining).split('.')[1]}") * 60)
                         await ctx.followup.send(f"Your admin account is currently being locked out for {round(hours_remaining // 1)} hour(s) and {minutes_remaining} minute(s)")
                         print(f"User {ctx.user.name} admin account is currently being locked out!\n\n")
-                        await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/Admin account locked!")
+                        await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/Admin account locked!")
                     return
             await ctx.followup.send( f"You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
             print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
-            await LoggingApplicationCommand(ctx, f"/admin_log_in", f"accountemail -> REDACT, accountpassword -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
+            await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/User does not have a Cyberbot admin account yet!")
     finally:
-        accountemail = None
-        accountpassword = None
+        account_email = None
+        account_password = None
         hashedPassword = None
 
 
@@ -819,7 +828,7 @@ async def cyberbot_config(ctx, configuration: Literal["Automation-Mode", "Silent
 )
 @app_commands.guild_only()
 async def viewing_cyberbot_configuration(ctx):
-    print(f"User {ctx.user.name} initiated /viewing_cyberbot_configurationcommand")
+    print(f"User {ctx.user.name} initiated /viewing_cyberbot_configuration command")
     await ctx.response.defer(ephemeral=True)
     if str(ctx.channel.type).startswith("private"):
         await ctx.followup.send("/viewing_cyberbot_configuration can only be used in server channels!")
