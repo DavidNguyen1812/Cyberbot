@@ -154,7 +154,7 @@ async def CyberBotScan(message: discord.message.Message | discord.interactions.I
                 except discord.Forbidden:
                     print(f"Cyberbot does not have permission to delete message {message.id}")
             await SendScanMessage(message, scanResult.sendingMessage, manualScan=manualScan)
-        elif (not isSilent and scanResult == "clean") or (scanResult != "clean"): # Unverified or Error Scan Results should be notified regardless of Silent mode enable or not
+        elif (not isSilent and scanResult.status == "clean") or (scanResult.status != "clean"): # Unverified or Error Scan Results should be notified regardless of Silent mode enable or not
             await SendScanMessage(message, scanResult.sendingMessage, manualScan=manualScan)
 
     if any(result.status in ("unverified", "error", "too_large", "unsupported") for result in results):
