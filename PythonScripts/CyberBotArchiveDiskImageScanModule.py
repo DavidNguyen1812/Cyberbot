@@ -16,6 +16,7 @@ import re
 import signal
 import tempfile
 import time
+import requests
 from dataclasses import dataclass, field
 
 
@@ -150,26 +151,32 @@ def _PathTransversalAttackDetection(filepath: str) -> list:
 
 
 def checkingRealFileExtension(fileContent: bytes, fname: str, verbose: bool = True):
-    """Checking extension by it partial bytes content in RAM"""
+    """Checking extension by it bytes content in RAM"""
+    if verbose:
+        print(f"Starting Python-Magic module...")
     mime = magic.from_buffer(fileContent, mime=True)
     Ext = mimetypes.guess_extension(mime)
     if Ext:
         if Ext == ".bin":
+            if fileContent[1:4] == b'\64\73\73':
+                if verbose:
+                    print(f"Detected file extension .dss")
+                return '.dss'
             if fileContent.startswith(b'PK'):
                 if verbose:
                     print(f"Detected file extension .zip")
                 return '.zip'
-            elif fileContent.startswith(b'caff'):
+            if fileContent.startswith(b'caff'):
                 if verbose:
                     print(f"Detected file extension .caf")
                 return '.caf'
-            elif len(fileContent) > 512:
+            if len(fileContent) > 512:
                 Last512bytes = fileContent[-512:]
                 if b'conectix' in Last512bytes:
                     if verbose:
                         print(f"Detected file extension .vhd")
                     return '.vhd'
-                elif b'koly' in Last512bytes or Last512bytes.startswith(b'EFI PART') or fileContent.startswith(b'EFI PART'):
+                if b'koly' in Last512bytes or Last512bytes.startswith(b'EFI PART') or fileContent.startswith(b'EFI PART'):
                     if verbose:
                         print(f"Detected file extension .dmg")
                     return '.dmg'
@@ -210,6 +217,9 @@ def checkingRealFileExtension(fileContent: bytes, fname: str, verbose: bool = Tr
                 print(f"Python-Magic detect file extension {Ext}")
         return Ext
     else:
+        if verbose:
+            print(f"Python-Magic can't determine file extension!")
+        print("Manual inspecting content header bytes....")
         if fileContent.startswith(
                 (b'\xfe\xed\xfa\xce', b'\xce\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xcf\xfa\xed\xfe',
                  b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca')):
@@ -224,43 +234,70 @@ def checkingRealFileExtension(fileContent: bytes, fname: str, verbose: bool = Tr
             if verbose:
                 print(f"Detected file extension .qcow2")
             return ".qcow2"
-        elif fileContent.startswith(b'vhdxfile'):
+        if fileContent.startswith(b'vhdxfile'):
             if verbose:
                 print(f"Detected file extension .vhdx")
             return ".vhdx"
-        elif fileContent.startswith(b'KDMV'):
+        if fileContent.startswith(b'KDMV'):
             if verbose:
                 print(f"Detected file extension .vmdk")
             return ".vmdk"
-        elif len(fileContent) >= 32768:
+        if len(fileContent) >= 32768:
             if fileContent[32768:32768 + 5].startswith((b"NSR02", b"NSR03")):
                 if verbose:
                     print(f"Detected file extension .udf")
                 return '.udf'
-        else:
-            if verbose:
-                print(f"Python-Magic did not detect")
-            try:
-                if fileContent.decode("ascii").isascii():
-                    if verbose:
-                        print(f"ASCII file detected")
-                    return ".txt"
-            except UnicodeDecodeError:
+        try:
+            if fileContent.decode("ascii").isascii():
                 if verbose:
-                    print(f"Starting filetype module...")
-                Ext = filetype.guess(fileContent)
-                if Ext:
-                    if verbose:
-                        print(f"Filetype detected file extension {Ext.extension}")
-                    return f".{Ext.extension}"
-                elif fileContent.startswith((b'\x0B\x77', b'\x0bwu\xacT@C')):
-                    if verbose:
-                        print(f"Detected file extension .ac3")
-                    return ".ac3"
-                elif fname.endswith(".lzma"):
+                    print(f"ASCII file detected")
+                return ".txt"
+        except UnicodeDecodeError:
+            if verbose:
+                print("Manual inspection can't determine file extension!")
+                print(f"Starting filetype module...")
+            Ext = filetype.guess(fileContent)
+            if Ext:
+                if verbose:
+                    print(f"Filetype detected file extension {Ext.extension}")
+                return f".{Ext.extension}"
+            else:
+                first100BytesHex = fileContent[:100].hex()
+                if first100BytesHex.startswith("5d0000"):
                     if verbose:
                         print(f"Detected file extension .lzma")
                     return ".lzma"
+                else:
+                    try:
+                        # https://filesignature.org/api
+                        if verbose:
+                            print(f"filetype module can't determine file extension!")
+                            print(f"Starting filesignature.org /identify search...")
+                        response = requests.get("https://filesignature.org/api/v1/identify", params={"hex": first100BytesHex}, timeout=30)
+                        response.raise_for_status()
+                        result = response.json()
+                        if not result.get("success"):
+                            raise ValueError(result.get("error", "File identification failed"))
+                        else:
+                            analysisData = result.get("data", {})
+                            if analysisData:
+                                analysisDataVerdict = analysisData.get("matches", [])
+                                if analysisDataVerdict:
+                                    analysisDataVerdict = analysisDataVerdict[0]
+                                    fileExtension = analysisDataVerdict.get("ext", "")
+                                    if fileExtension:
+                                        if verbose:
+                                            print(f"filesignature.org detected file extension {fileExtension}")
+                                        return fileExtension
+                                    else:
+                                        if verbose:
+                                            print(f"filesignature.org can't determine file extension!")
+                                else:
+                                    raise ValueError("Empty Final Analysis Verdict Data")
+                            else:
+                                raise ValueError("Empty Analysis Data")
+                    except Exception as e:
+                        print(f"Error: {str(e)}")
         if verbose:
             print(f"File extension can not be determined!")
         return "Can't be determined"
