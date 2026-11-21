@@ -28,7 +28,7 @@ for systembinary in systembinaries:
 
 """Python Dependencies Check"""
 print("Checking Python Dependencies")
-dependencies = ["discord-py", "python-dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep", "email-validator", "bcrypt"]
+dependencies = ["discord-py", "python-dotenv", "filetype", "openai", "python-magic", "rarfile", "aiofiles", "aiocsv", "numpy", "pandas", "matplotlib", "fpdf", "google-genai", "transformers", "torch", "jep", "email-validator", "bcrypt", "pypdf"]
 for dependency in dependencies:
     result = subprocess.run(["pip", "show", dependency], capture_output=True, text=True)
     if "not found" in f"{result.stderr}{result.stdout}":
@@ -72,11 +72,12 @@ from transformers import BertTokenizer, LongformerTokenizer
 from aiocsv import AsyncWriter
 from zoneinfo import ZoneInfo
 from email_validator import validate_email, EmailNotValidError
-from google.genai import types
+from google.genai import types, errors
 from google.genai.types import HttpOptions
 from google.genai.errors import APIError
 from httpx import ConnectTimeout
 from contextlib import asynccontextmanager
+from pypdf import PdfReader, PdfWriter
 
 import pathlib
 import openai
@@ -86,6 +87,10 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import bcrypt
+import base64
+import io
+from typing import Any
+import math
 
 
 """Getting Important File Paths"""
@@ -122,6 +127,7 @@ ALLEN_AI_SPAM_CLASSIFIER = str(ROOT_DIR / "Files" / "MLModels" / hardware / f"Al
 """----API Tokens----"""
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_API_KEY")
 virusTotalApiKey = os.environ.get("VT_API_KEY")
+GMAIL_CRED = os.environ.get("EMAIL_CRED")
 
 """System Configuration"""
 rarfile.UNRAR_TOOL = "unar"
@@ -144,25 +150,6 @@ labels = {
             "2": "Social Email",
             "3": "Promotion Email",
             "4": "Finance Email"
-        }
-}
-
-GPTclient = AsyncOpenAI(timeout=300, max_retries=0) # We will handle retry manually
-GeminiClient = genai.Client(http_options=HttpOptions(timeout=300000))
-GPT_MODEL = "gpt-5.3-codex"
-GEMINI_MODEL = "gemini-3.8-flash"
-LLM_MODEL_INFORMATION = {
-    GEMINI_MODEL:
-        {
-            "Maximum Input Tokens": 1048576,
-            "Cost": {"Input Token": [0.75, 0.75], "Output Token": [3.75, 3.75], "Cached Read": [0.075, 0.075], "Cached Writes": [0.5, 0.5]},
-            "TPM": 2000000
-        },
-    GPT_MODEL:
-        {
-            "Maximum Input Tokens": 400000,
-            "Cost": {"Input Token": [1.75, 1.75], "Output Token": [14, 14], "Cached Read": [0.175, 0.175]},
-            "TPM": 500000
         }
 }
 
@@ -241,3 +228,28 @@ class URLScanResult:
         self.sendingMessage = sendingMessage
         self.logMessage = logMessage
 
+"""Defining selected OpenAI and Gemini models"""
+# https://platform.openai.com/docs/pricing
+OPENAI_LLM_MODEL_FOR_SCAT = "gpt-6.2-sol"
+GEMINI_LLM_MODEL_FOR_SCAT = "gemini-3.8-flash"
+
+# Modify this Dictionary on your own for your choice of LLM model
+LLM_MODEL_INFORMATION = {
+                        "gpt-6.2-sol":
+                            {
+                                "Maximum Input Tokens": 1050000,
+                                "Cost": {"Input Token": [2, 4], "Output Token": [10, 15], "Cached Read": [0.1, 0.2], "Cached Writes": [2.50, 5]},
+                                "TPM": 2000000
+                            },
+                        "gemini-3.8-flash":
+                            {
+                                "Maximum Input Tokens": 1048576,
+                                "Cost": {"Input Token": [0.75, 0.75], "Output Token": [3.75, 3.75], "Cached Read": [0.075, 0.075], "Cached Writes": [0.5, 0.5]},
+                                "TPM": 2000000
+                            }
+}
+
+assert OPENAI_LLM_MODEL_FOR_SCAT.startswith('gpt')
+assert GEMINI_LLM_MODEL_FOR_SCAT.startswith('gemini')
+OPENAI_LLM_ENGINE = AsyncOpenAI(timeout=300, max_retries=0) # We will handle the retry logic on own own)
+GEMINI_LLM_ENGINE = genai.Client(http_options=HttpOptions(timeout=300000, api_version='v1beta'))
