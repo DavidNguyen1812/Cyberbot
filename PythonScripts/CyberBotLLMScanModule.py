@@ -122,7 +122,7 @@ async def llmSCAT(model: str, pdfPath: str, logMessage: str) -> Tuple[str, str]:
                 PDFSegmentBase64 = None
         print(f"[{model} SCAT Analysis] The optimal PDF segment value is: {pageSegment}")
         logMessage += f"\t + **Optimal PDF segment value is:** {pageSegment:,}\n"
-        PDFBase64Datas = asyncio.to_thread(_segmentPDFToBase64, PDFReader, PDFPageCount, pageSegment)
+        PDFBase64Datas = await asyncio.to_thread(_segmentPDFToBase64, PDFReader, PDFPageCount, pageSegment)
     else:
         PDFBase64Datas = {"Full PDF Pages": PDFBase64Data}
 
