@@ -101,24 +101,25 @@ async def llmSCAT(model: str, pdfPath: str, logMessage: str) -> Tuple[str, str]:
             pageSegment = math.floor(pageSegment * 0.9)
             print(f"Testing PDF segment value of {pageSegment} pages")
             logMessage += f"\t + **Testing Input Token Count For Segment Value {pageSegment}**\n"
-            PDFWriter = PdfWriter()
-            for pageIndex in range(0, pageSegment):
-                PDFWriter.add_page(PDFReader.pages[pageIndex])
-            with io.BytesIO() as PDFBuffer:
-                PDFWriter.write(PDFBuffer)
-                PDFSegmentBytes = PDFBuffer.getvalue()
-            segmentSize = len(PDFSegmentBytes)
-            PDFSegmentBase64 = (await asyncio.to_thread(base64.b64encode, PDFSegmentBytes)).decode("utf-8")
-            if model.startswith("gpt"):
-                inputPromptTokenCount = (await OPENAI_LLM_ENGINE.responses.input_tokens.count(model=model, instructions=SYSTEM_INSTRUCTION, input=[{"role": "user", "content": [{"type": "input_file", "filename": f"{uuid.uuid4().hex[0:5]}.pdf", "file_data": f"data:application/pdf;base64,{PDFSegmentBase64}"}, {"type": "input_text", "text": PROMPT}]}])).input_tokens
-            else:
-                inputPromptTokenCount = (await GEMINI_LLM_ENGINE.aio.models.count_tokens(model=model, contents=types.Content(role="user", parts=[types.Part.from_bytes(data=PDFSegmentBytes, mime_type="application/pdf"), types.Part.from_text(text=f"{SYSTEM_INSTRUCTION}\n{PROMPT}")]))).total_tokens
-            print(f"[{model} SCAT Analysis] Input Token Count For The Segment Value: {inputPromptTokenCount:,} tokens")
-            print(f"[{model} SCAT Analysis] Total Size For The Segment Value: {segmentSize:,} bytes")
-            logMessage += (f"\t\t + **Total Input Token Count:** `{inputPromptTokenCount:,}`\n"
-                           f"\t\t + **Total Size:** `{segmentSize:,} bytes`\n")
-            PDFSegmentBytes = None
-            PDFSegmentBase64 = None
+            if (model.startswith("gemeni") and pageSegment < 1000) or model.startswith("gpt"):
+                PDFWriter = PdfWriter()
+                for pageIndex in range(0, pageSegment):
+                    PDFWriter.add_page(PDFReader.pages[pageIndex])
+                with io.BytesIO() as PDFBuffer:
+                    PDFWriter.write(PDFBuffer)
+                    PDFSegmentBytes = PDFBuffer.getvalue()
+                segmentSize = len(PDFSegmentBytes)
+                PDFSegmentBase64 = (await asyncio.to_thread(base64.b64encode, PDFSegmentBytes)).decode("utf-8")
+                if model.startswith("gpt"):
+                    inputPromptTokenCount = (await OPENAI_LLM_ENGINE.responses.input_tokens.count(model=model, instructions=SYSTEM_INSTRUCTION, input=[{"role": "user", "content": [{"type": "input_file", "filename": f"{uuid.uuid4().hex[0:5]}.pdf", "file_data": f"data:application/pdf;base64,{PDFSegmentBase64}"}, {"type": "input_text", "text": PROMPT}]}])).input_tokens
+                else:
+                    inputPromptTokenCount = (await GEMINI_LLM_ENGINE.aio.models.count_tokens(model=model, contents=types.Content(role="user", parts=[types.Part.from_bytes(data=PDFSegmentBytes, mime_type="application/pdf"), types.Part.from_text(text=f"{SYSTEM_INSTRUCTION}\n{PROMPT}")]))).total_tokens
+                print(f"[{model} SCAT Analysis] Input Token Count For The Segment Value: {inputPromptTokenCount:,} tokens")
+                print(f"[{model} SCAT Analysis] Total Size For The Segment Value: {segmentSize:,} bytes")
+                logMessage += (f"\t\t + **Total Input Token Count:** `{inputPromptTokenCount:,}`\n"
+                               f"\t\t + **Total Size:** `{segmentSize:,} bytes`\n")
+                PDFSegmentBytes = None
+                PDFSegmentBase64 = None
         print(f"[{model} SCAT Analysis] The optimal PDF segment value is: {pageSegment}")
         logMessage += f"\t + **Optimal PDF segment value is:** {pageSegment:,}\n"
         PDFBase64Datas = asyncio.to_thread(_segmentPDFToBase64, PDFReader, PDFPageCount, pageSegment)
