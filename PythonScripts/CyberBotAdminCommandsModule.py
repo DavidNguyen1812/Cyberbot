@@ -211,7 +211,7 @@ async def remove_admin_account(ctx, account_email: str, account_password: str):
                         adminAccount["Total Locked Out"] = len(adminAccount["Locked Out History"])
                         adminAccount["Current Admin Session Period"] = {}
                         try:
-                            await Cyberbot.get_user(adminAccount["User ID"]).send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /remove_admin_account.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
+                            await ctx.user.send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /remove_admin_account.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
                         except Exception:
                             pass
                         await ctx.followup.send("Too many failed authentication attempts! Your admin account has been locked for 3 hours!")
@@ -351,7 +351,7 @@ async def adding_admins(ctx, member: discord.Member):
                                     await file.write(json.dumps(CyberBotConfigData, indent=4))
                             await ctx.followup.send(f"{member.name} admin account can now be used in server {ctx.guild.name}")
                             print(f"{member.name} admin access to server {ctx.guild.name} added!\n\n")
-                            await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {admin['User ID']} added!")
+                            await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} added!")
                         except Exception as e:
                             await ctx.followup.send(f"Cyberbot can't register {member.name} admin account!")
                             print(f"Error sending DM message to {member.name}\n\n")
@@ -397,10 +397,10 @@ async def removing_admins(ctx, member: discord.Member):
                 else:
                     try:
                         await member.send(f"Your admin account access on server **{ctx.guild.name}** ID **{ctx.guild.id}** has been removed by the server owner **{ctx.user.name}**")
-                        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {admin['User ID']} removed!")
+                        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} removed!")
                     except Exception as e:
                         print(f"Error sending DM to {member.name}\n\n")
-                        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {admin['User ID']} removed! Cyberbot, however, can not send DM to user!")
+                        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} removed! Cyberbot, however, can not send DM to user!")
                     admin["Accessible Servers"].remove(ctx.guild.id)
                     if admin["Current Admin Session Period"].get(str(ctx.guild.id)):
                         del admin["Current Admin Session Period"][str(ctx.guild.id)]
@@ -650,7 +650,7 @@ async def admin_log_in(ctx, account_email: str, account_password: str):
                             adminAccount["Last Time Logged In"] = time.ctime(time.time())
                             await ctx.followup.send("Cyberbot will now recognize you as an admin for 1 hour in this server before requiring you to log in again!")
                             print(f"User {ctx.user.name} logged in as an admin in the server!\n\n")
-                            await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", f"Approved/New 1 hour admin session with admin account {adminAccount['User ID']} in server {ctx.guild.name} ID {ctx.user.id} created")
+                            await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", f"Approved/New 1 hour admin session with admin account {ctx.user.id} in server {ctx.guild.name} ID {ctx.guild.id} created")
                         else:
                             await ctx.followup.send(f"Your admin account is not permitted to access in this server, please contact the server owner {ctx.guild.owner.name} to give you admin account access to the server!")
                             print(f"User {ctx.user.name} does not have admin account access to the server!\n\n")
@@ -673,7 +673,7 @@ async def admin_log_in(ctx, account_email: str, account_password: str):
                         adminAccount["Total Locked Out"] = len(adminAccount["Locked Out History"])
                         adminAccount["Current Admin Session Period"] = {}
                         try:
-                            await Cyberbot.get_user(adminAccount["User ID"]).send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /admin_log_in.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
+                            await ctx.user.send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /admin_log_in.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
                         except Exception:
                             pass
                         await ctx.followup.send("Too many failed login attempts! Your admin account has been locked for 3 hours!")
