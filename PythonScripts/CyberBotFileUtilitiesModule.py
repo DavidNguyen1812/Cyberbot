@@ -30,21 +30,40 @@ class AttachmentSizeLimitExceeded(Exception):
         self.file_size = file_size
 
 
-async def hashAttachmentWithoutDownload(attachmentUrl: str) -> tuple[str, int, bytes | None, str]:
+async def hashAttachmentWithoutDownload(attachmentUrl: str) -> tuple[str, int, bytes, bool]:
     """
     Description: Read attachment over HTTPS in bounded chunks without storing content on disk.
     :param attachmentUrl: The URL to GET the attachment content
-    :return The file content SHA-256 hash, full content length, full file bytes content currently stored in memory or not and final destination URL, URL is potential SSRF or not?
+    :return The file content SHA-256 hash, full content length, full file bytes content currently stored in memory or not and GET content error or not?
     """
     FullContentLength = 0
     RootFileHashed = hashlib.sha256()
     fileBytesChunks = []
-    keepInMemory = True
+    parts = urlsplit(attachmentUrl)
     async with FILE_HASH_SEMAPHORE:
-        async with Cyberbot.session.get(attachmentUrl, headers=random.choice(BROWSER_HEADERS), allow_redirects=False) as response:
-            response.raise_for_status()
-            if response.status != 200:
-                raise RuntimeError(f"Unexpected attachment HTTP status {response.status}")
+        async with Cyberbot.session.get(attachmentUrl, allow_redirects=False) as response:
+            if response.status not in range(200, 399):
+                if parts.hostname.lower() in ['cdn.discordapp.com', 'media.discordapp.net'] and parts.port in (None, 443) and parts.username is None and parts.path.startswith('/attachments/'):
+                    print("Discord Attachment URL can't be retrieved! Begin refreshing the URL...")
+                    Headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
+                    Payload = {"attachment_urls": [attachmentUrl]}
+                    async with Cyberbot.session.post("https://discord.com/api/v10/attachments/refresh-urls", headers=Headers, json=Payload) as refreshResponse:
+                        if refreshResponse.status != 200:
+                            print("Shit! Can't refresh Discord URL")
+                            return '', 0, b'', True
+                        refreshResponseData = await refreshResponse.json()
+                    try:
+                        downloadURL =  refreshResponseData["refreshed_urls"][0]["refreshed"]
+                    except Exception :
+                        print("Shit! Can't get the refresh Discord URL")
+                        return '', 0, b'', True
+                    print("Successfully getting the refreshed Discord attachment URL!")
+                else:
+                    print("Can't GET URL content")
+                    return '', 0, b'', True
+            else:
+                downloadURL = attachmentUrl
+        async with Cyberbot.session.get(downloadURL, allow_redirects=False) as response:
             if response.content_length is not None and response.content_length > MAX_FILE_SCAN_SIZE:
                 raise AttachmentSizeLimitExceeded("File attachment exceeding Cyberbot file size limit of 300 MB", response.content_length)
             async for fileBytesContent in response.content.iter_chunked(300000):
@@ -52,12 +71,9 @@ async def hashAttachmentWithoutDownload(attachmentUrl: str) -> tuple[str, int, b
                 if FullContentLength > MAX_FILE_SCAN_SIZE:
                     raise AttachmentSizeLimitExceeded("File attachment exceeding Cyberbot file size limit of 300 MB", FullContentLength)
                 RootFileHashed.update(fileBytesContent)
-                if keepInMemory and FullContentLength <= ATTACHMENT_CONTENT_IN_MEMORY_LIMIT:
+                if FullContentLength <= ATTACHMENT_CONTENT_IN_MEMORY_LIMIT:
                     fileBytesChunks.append(fileBytesContent)
-                elif keepInMemory:
-                    fileBytesChunks.clear()
-                    keepInMemory = False
-    return RootFileHashed.hexdigest(), FullContentLength, (b"".join(fileBytesChunks) if keepInMemory else None), attachmentUrl
+    return RootFileHashed.hexdigest(), FullContentLength, b"".join(fileBytesChunks), False
 
 
 async def checkingFileExtensionFromDisk(filePath: str, RootFileName: str) -> str:
