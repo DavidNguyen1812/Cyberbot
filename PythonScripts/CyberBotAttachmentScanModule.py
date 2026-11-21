@@ -95,7 +95,6 @@ async def scanOneAttachment(attachmentUrl: str, RootFileName: str, message=None,
         else:
             status = "UNVERIFIED"
         logMessage += (f"- **Scan Result:** `{status}`\n"
-                       f"- **Reason:** `{sharedResult.sendingMessage.reason}`\n"
                        f"- **Scan Duration In Second(s):** {time.perf_counter() - ScanStartTime:.2f}s\n\n---\n\n")
         print(f"File {RootFileName} scan duration: {time.perf_counter() - ScanStartTime:.2f}s")
         return FileScanResult(sharedResult.RootFileName, sharedResult.status, sharedResult.sendingMessage, sharedResult.logMessage, sharedResult.RootFileHashed)
