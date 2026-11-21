@@ -96,7 +96,7 @@ async def checking_expired_tokens():
 
 @tasks.loop(seconds=15)  # A task every 15 seconds
 async def checking_member_can_kick_cyberbot():
-    for account in CyberBotConfigData["Admins"]:
+    for _, account in CyberBotConfigData["Admins"].items():
         for serverID in account["Accessible Servers"]:
             guild = Cyberbot.get_guild(serverID)
             member = guild.get_member(account["User ID"])
