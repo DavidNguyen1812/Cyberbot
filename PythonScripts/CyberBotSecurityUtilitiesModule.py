@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from CyberBotRuntimeModule import *
-from CyberBotAnalyticsModule import calculateUsageCost, writingLLMUsageCsv
 from CyberBotEmailTemplateModule import buildCyberbotHTMLEmail, getCyberbotEmailLogoBytes
 from email.utils import make_msgid
 
@@ -52,20 +51,21 @@ def sendEmail(subject: str, receiver_email: str, user_discord_name: str, otp: st
         # Retain the existing Gmail SMTP transport and success strings.
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as server:
-            server.login(sender_email, os.environ.get("EMAIL_CRED"))
+            server.login(sender_email, GMAIL_CRED)
             server.send_message(email)
+        print(f"[Cyberbot Email System] Automation Email sent to {receiver_email} succesfully!")
+        return "Email sent successfully!"
+
     except smtplib.SMTPRecipientsRefused as clientError:
         print(f"[Cyberbot Email System] Error sending email to {receiver_email}: {clientError}")
         return "Email sent unsuccessfully!"
+
     except Exception as other_error:
         print(f"[Cyberbot Email System] Error sending email to {receiver_email}: {other_error}")
         return "Email sent unsuccessfully!"
+
     finally:
         otp = ""
-    print(f"[Cyberbot Email System] Automation Email sent to {receiver_email} succesfully!")
-    return "Email sent successfully!"
-
-
 
 def txtToPDFConversion(txtFile: str, outputPDFPath: str):
     """
@@ -137,33 +137,6 @@ async def randomPasswordGenerator() -> str:
         for i in range(random.randint(12, 20)):
             password += random.choice(char)
     return password
-
-
-async def GeminiCheckCommonPassword(password: str) -> bool:
-    """
-    Description: Checking password strength using Gemini
-    :param password: Password to be checked
-    :return: True if the password is not secure, else False
-    """
-    response = await GeminiClient.aio.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=f"Only say True if {password} seems to be from commonly used passwords, otherwise say False"
-    )
-
-    inputPromptTokenCount = response.usage_metadata.prompt_token_count
-    totalCachedRead = response.usage_metadata.cached_content_token_count or 0
-    totalRawInputTokens = response.usage_metadata.prompt_token_count - totalCachedRead
-    outputPromptTokenCount = response.usage_metadata.total_token_count - response.usage_metadata.prompt_token_count
-    cMonth = time.ctime(time.time()).split()[1]
-    cDay = time.ctime(time.time()).split()[2]
-    totalCost = calculateUsageCost(GEMINI_MODEL, [totalRawInputTokens, totalCachedRead], outputPromptTokenCount)
-    await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMMonthlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINI_MODEL, totalCost], MonthlyCSVLock)
-    await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GEMINI_MODEL, totalCost], YearlyCSVLock)
-
-    if response.text.startswith(("True", "true")):
-        return True
-    else:
-        return False
 
 
 async def CheckPasswordPwned(password: str) -> bool:
