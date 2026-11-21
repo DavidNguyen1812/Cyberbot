@@ -431,7 +431,7 @@ async def analyzeAttachmentContents(RootFileName: str, RootFileTrueExt: str, fil
                             GeminiScanResult, logMessage = await llmSCAT(GEMINI_LLM_MODEL_FOR_SCAT, pdfPath, logMessage) if pdfPath else await llmSCATOnText(GEMINI_LLM_MODEL_FOR_SCAT, filepath, logMessage)
                         if GeminiScanResult.startswith(("True", "true")):
                             flaggedMalicious, LLMModel, LLMResult = True, GEMINI_LLM_MODEL_FOR_SCAT, GeminiScanResult
-                        elif GptScanResult == "Nothing Malicious":
+                        elif GeminiScanResult == "Nothing Malicious":
                             LLMVerified = True
 
                     if flaggedMalicious:
