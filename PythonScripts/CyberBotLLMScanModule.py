@@ -1,196 +1,233 @@
 from __future__ import annotations
 
-import os.path
-
 from CyberBotRuntimeModule import *
-from CyberBotAnalyticsModule import calculateUsageCost, writingLLMUsageCsv
-
-async def openAISCAT(filepath: str, logMessage: str, retryCount: int = 1) -> Tuple[str, str]:
-    """
-    Description: Static Code Analysis on a script of a decompiled file with OpenAI Codex
-    :param filepath: The filepath of the file to analyze
-    :param logMessage: Current Log Message
-    :param retryCount: The number of current retries API call
-    :return: The analysis results from OpenAI
-    """
-    print(f"[Open AI SCAT Model {GPT_MODEL}] API call attempt {retryCount}...")
-    logMessage += (f"- **Begin SCAT Analysis With {GPT_MODEL}**\n"
-                   f"- **File:** `{os.path.basename(filepath)}`\n")
-    if retryCount == 3:
-        print(f"[Open AI SCAT Model {GPT_MODEL}] Too many attempts, return inconclusive scan!")
-        logMessage += f"- **{GPT_MODEL} SCAT Result:** `Too many retry attempts, inconclusive scan!`\n"
-        return "TOO MANY RETRY ATTEMPTS", logMessage
-    async with aiofiles.open(filepath, "rb") as PDFfile:
-        fileResponse = await GPTclient.files.create(file=(f"{uuid.uuid4().hex}.pdf", await PDFfile.read()), purpose="assistants")
-        fileID = fileResponse.id
-    prompt = (f"# ASK:\n"
-              f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
-              f"# RESPONSE FORMAT:\n"
-              f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
-    inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPT_MODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}])).input_tokens
-    print(f"[Open AI SCAT Model {GPT_MODEL}] Total Input Tokens: {inputPromptTokenCount}")
-    logMessage += f"- **Total Input Tokens Count:** `{inputPromptTokenCount:,} tokens`\n"
-    if inputPromptTokenCount > LLM_MODEL_INFORMATION[GPT_MODEL]["Maximum Input Tokens"] or inputPromptTokenCount > LLM_MODEL_INFORMATION[GPT_MODEL]["TPM"]:
-        print(f"[Open AI SCAT Model {GPT_MODEL}] MAXIMUM TOKEN LIMIT!!")
-        await GPTclient.files.delete(fileID)
-        logMessage += f"- **{GPT_MODEL} SCAT Result:** `Input token exceed model context window, proceed to scan the file partially!`\n"
-        return "MAXIMUM INPUT TOKEN LIMIT", logMessage
-    else:
-        try:
-            response = await GPTclient.responses.create(model=GPT_MODEL, instructions="You are a cybersecurity analyst on a file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_file", "file_id": fileID}]}], temperature=0, store=False, max_output_tokens=5000)
-            totalCachedRead = response.usage.input_tokens_details.cached_tokens
-            totalRawInputTokens = response.usage.input_tokens - totalCachedRead
-            outputPromptTokenCount = response.usage.total_tokens - inputPromptTokenCount
-            print(f"[Open AI SCAT Model {GPT_MODEL}] Total Output Tokens: {outputPromptTokenCount}")
-            cMonth = time.ctime(time.time()).split()[1]
-            cDay = time.ctime(time.time()).split()[2]
-            totalCost = calculateUsageCost(GPT_MODEL, [totalRawInputTokens, totalCachedRead], outputPromptTokenCount)
-            await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMMonthlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPT_MODEL, totalCost], MonthlyCSVLock)
-            await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, GPT_MODEL, totalCost], YearlyCSVLock)
-            logMessage += f"- **Total Output Tokens Count:** `{outputPromptTokenCount:,} tokens`\n"
-            logMessage += f"- **{GPT_MODEL} SCAT Result:**\n{response.output_text}\n"
-            if response.output_text:
-                return response.output_text, logMessage
-            else:
-                print(f"[Open AI SCAT Model {GPT_MODEL}] Got an empty response!")
-                return "EMPTY RESPONSE", logMessage
-        except (openai.APITimeoutError, openai.RateLimitError) as Error:
-            print(f"[Open AI SCAT Model {GPT_MODEL}] Error {Error}\nAttempting SCAT process again after 15 seconds!")
-            logMessage += (f"- **{GPT_MODEL} SCAT Result:** Error {Error}\n"
-                           f"- **Retry {GPT_MODEL} SCAT after 15 seconds**\n")
-            await asyncio.sleep(15)
-            return await openAISCAT(filepath, logMessage, retryCount + 1)
-        except Exception as Error:
-            print(f"[Open AI SCAT Model {GPT_MODEL}] {Error}")
-            logMessage += f"- **{GPT_MODEL} SCAT Result:** Error {Error}\n"
-            return str(Error), logMessage
-        finally:
-            await GPTclient.files.delete(fileID)
+from CyberBotAnalyticsModule import calculateUsageCost
 
 
-async def GeminiSCAT(filepath: str, logMessage: str, retryCount: int = 1) -> Tuple[str, str]:
+SYSTEM_INSTRUCTION = "You are an expert reverse engineer analyzing a decompiled binary file with Ghidra for static analysis"
+PROMPT = (f"# ASK:\n"
+          f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
+          f"# RESPONSE FORMAT:\n"
+          f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
+
+
+def _segmentPDFToBase64(PDFReader: PdfReader, PDFPageCount: int, pagesPerSegment: int = 200) -> dict:
     """
-    Description: Static Code Analysis on a script of a decompiled file with Google Gemini
-    :param filepath: The filepath of the file to analyze
-    :param logMessage: The current log message
-    :param retryCount: The number of times to retry the scan
-    :return: The analysis results from Gemini
+    Description: Segment a PDF into smaller PDF documents and convert them to Base64
+    :param PDFReader: The PdfReader object of the original PDF file
+    :param PDFPageCount: The total number of pages of the original PDF file
+    :param pagesPerSegment: Number of pages per segment
+    :return: Base64 data string of each PDF segments
     """
-    print(f"[Gemini SCAT Model {GEMINI_MODEL}] API call attempt {retryCount}...")
-    logMessage += f"- **Begin SCAT Analysis With {GEMINI_MODEL}**\n"
-    if retryCount == 3:
-        print(f"[Gemini SCAT Model {GEMINI_MODEL}] Too many attempts, return inclusive scan!")
-        logMessage += f"- **{GEMINI_MODEL} SCAT Result:** `Too many retry attempts, inconclusive scan!`\n"
-        return "TOO MANY RETRY ATTEMPTS", logMessage
-    mainPrompt = (
-        f"# ASK:\n"
-        f"Reads the source/script file contents and decides if it is a malware exhibits any malicious pattern.\n"
-        f"# RESPONSE FORMAT:\n"
-        f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**"
-    )
-    uploadedFile = await GeminiClient.aio.files.upload(file=filepath)
-    uploadedFiles = [uploadedFile.name]
-    print(f"[Gemini SCAT Model {GEMINI_MODEL}] Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
-    prompts = [uploadedFile, mainPrompt]
+    PDFBase64Datas = {}
     try:
-        try:
-            totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINI_MODEL, contents=prompts)).total_tokens
-        except Exception as error:
-            print(f"[Gemini SCAT Model {GEMINI_MODEL}] Received error: {error}\nAttempting upload original source file")
-            logMessage += f"- **{GEMINI_MODEL} SCAT Result:** `Received error: {error}, attempting upload original source file`\n"
-            fallbackFilePath = os.path.splitext(filepath)[0] + ".txt"
-            if not os.path.isfile(fallbackFilePath):
-                print(f"Original file {fallbackFilePath} not found!")
-                logMessage += f"- **{GEMINI_MODEL} SCAT Result:** `Original source file not found! Inconclusive Scan!`\n"
-                return "INCONCLUSIVE SCAN", logMessage
-            uploadedFile = await GeminiClient.aio.files.upload(file=fallbackFilePath)
-            uploadedFiles.append(uploadedFile.name)
-            print(f"[Gemini SCAT Model {GEMINI_MODEL}] Uploaded file '{uploadedFile.name}' as: {uploadedFile.uri}")
-            prompts = [uploadedFile, mainPrompt]
-            try:
-                totalInputTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINI_MODEL, contents=prompts)).total_tokens
-                print(f"[Gemini SCAT Model {GEMINI_MODEL}] Total Input Tokens: {totalInputTokenCount}")
-            except Exception as error:
-                logMessage += f"- **{GEMINI_MODEL} SCAT Result:** `Error {error}`\n"
-                return str(error), logMessage
-        logMessage += f"- **Total Input Tokens Count:** `{totalInputTokenCount:,} tokens`\n"
-        if (totalInputTokenCount > LLM_MODEL_INFORMATION[GEMINI_MODEL]["Maximum Input Tokens"] or totalInputTokenCount > LLM_MODEL_INFORMATION[GEMINI_MODEL]["TPM"]):
-            print(f"[Gemini SCAT Model {GEMINI_MODEL}] MAXIMUM TOKEN LIMIT!!")
-            logMessage += f"- **{GEMINI_MODEL} SCAT Result:** `Input token exceed model context window, proceed to scan the file partially!`\n"
-            return "MAXIMUM INPUT TOKEN LIMIT", logMessage
-
-        response = await GeminiClient.aio.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompts,
-            config=types.GenerateContentConfig(
-                system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection",
-                max_output_tokens=5000, temperature=0
-            )
-        )
-
-        totalCachedRead = response.usage_metadata.cached_content_token_count or 0
-        totalRawInputTokens = response.usage_metadata.prompt_token_count - totalCachedRead
-        totalOutputTokenCount = (response.usage_metadata.total_token_count - response.usage_metadata.prompt_token_count)
-        cMonth = time.ctime(time.time()).split()[1]
-        cDay = time.ctime(time.time()).split()[2]
-        totalCost = calculateUsageCost(GEMINI_MODEL, [totalRawInputTokens, totalCachedRead], totalOutputTokenCount)
-        await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMMonthlyUsage.csv", "a", [f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINI_MODEL, totalCost], MonthlyCSVLock)
-        await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", totalInputTokenCount, totalOutputTokenCount, GEMINI_MODEL, totalCost], YearlyCSVLock)
-        logMessage += (f"- **Total Output Tokens Count:** `{totalOutputTokenCount:,} tokens`\n"
-                       f"- **{GEMINI_MODEL} SCAT Result:**\n{response.text}\n")
-        if response.text:
-            return response.text, logMessage
-        else:
-            print(f"[Gemini SCAT Model {GEMINI_MODEL}] Got an empty response!")
-            return "EMPTY RESPONSE", logMessage
-    except APIError as e:
-        if e.code == 429:
-            print(f"[Gemini SCAT Model {GEMINI_MODEL}] Rate Limit Error! Retry after 15 seconds!")
-            raise ConnectTimeout("Rate Limit Error!")
-        else:
-            logMessage += f"- **{GEMINI_MODEL} SCAT Result:** Error {e}\n"
-            print(f"[Gemini SCAT Model {GEMINI_MODEL}] {e.message}")
-            return e.message, logMessage
-    except ConnectTimeout as e:
-        logMessage += (f"- **{GEMINI_MODEL} SCAT Result:** Error {e}\n"
-                       f"- **Retry {GEMINI_MODEL} SCAT after 15 seconds**\n")
-        if e != "Rate Limit Error!":
-            print(f"[Gemini SCAT Model {GEMINI_MODEL}] Time Out Error! Retry after 15 seconds!")
-        await asyncio.sleep(15)
-        return await GeminiSCAT(filepath, logMessage, retryCount + 1)
-    finally:
-        for fileName in uploadedFiles:
-            await GeminiClient.aio.files.delete(name=fileName)
+        for startPage in range(0, PDFPageCount, pagesPerSegment):
+            endPage = min(startPage + pagesPerSegment, PDFPageCount)
+            PDFWriter = PdfWriter()
+            for pageIndex in range(startPage, endPage):
+                PDFWriter.add_page(PDFReader.pages[pageIndex])
+            with io.BytesIO() as PDFBuffer:
+                PDFWriter.write(PDFBuffer)
+                PDFSegmentBytes = PDFBuffer.getvalue()
+            PDFSegmentBase64 = base64.b64encode(PDFSegmentBytes).decode("ascii")
+            PDFBase64Datas[f"Pages {startPage + 1} to {endPage}"] = PDFSegmentBase64
+            print(f"Successfully obtained Base64 data for PDF pages {startPage + 1} to {endPage}")
+        PDFSegmentBase64 = None
+        PDFSegmentBase64 = None
+        return PDFBase64Datas
+    except Exception as e:
+        print(f"Encountering error while segmenting the PDF pages: {e}")
+        return {}
 
 
-async def partialLLMSCAT(filepath: str, logMessage: str, LLM: Literal["OpenAI", "Gemini"]) -> Tuple[bool, str, str]:
+async def llmSCAT(model: str, pdfPath: str, logMessage: str) -> Tuple[str, str]:
     """
-    Description: Partial Static Code Analysis on a script of a large decompiled file with OpenAI Codex and Google Gemini
+    Description: Static Code Analysis on PDF file that contains the decompiled script with OpenAI or Gemini
+    :param model: The name of the model
+    :param pdfPath: The PDF filepath of the file to analyze
+    :param logMessage: Current Log Message
+    :return: The analysis results and the updated log message
+    """
+    logMessage += (f"- **Begin SCAT Analysis With {model}**\n"
+                   f"- **PDF File:** `{os.path.basename(pdfPath)}`\n")
+
+    print(f"[{model} SCAT Analysis] Checking PDF file size and page count...")
+    PDFsize = await asyncio.to_thread(os.path.getsize, pdfPath)
+    PDFReader = await asyncio.to_thread(PdfReader, pdfPath, strict=False)
+    PDFPageCount = len(PDFReader.pages)
+    logMessage += (f"- **PDF Inspection Result**\n"
+                   f"\t+ **PDF Size:** `{PDFsize:,} bytes`\n"
+                   f"\t+ **Total Pages:** `{PDFPageCount:,} pages`\n")
+    print(f"[{model} SCAT Analysis] PDF Size: {PDFsize:,} bytes | Total Pages: {PDFPageCount:,} pages\n")
+
+    async with aiofiles.open(pdfPath, "rb") as PDFfile:
+        PDFBase64Data = (await asyncio.to_thread(base64.b64encode, await PDFfile.read())).decode('utf-8')
+        await PDFfile.seek(0)
+        PDFBytes = await PDFfile.read()
+    segmentPdf = False
+
+    if PDFsize > 50_000_000:
+        print(f"[{model} SCAT Analysis] PDF file size exceeds 50 MB, will scan by segments!")
+        logMessage += f"- **PDF File Size Exceeds 50 MB**\n"
+        segmentPdf = True
+
+    if model.startswith("gemini") and PDFPageCount > 1000:
+        print(f"[{model} SCAT Analysis] PDF page count exceeds 1000 pages, will scan by segments!")
+        logMessage += f"- **PDF File Page Count Exceeds 1000 pages**\n"
+        segmentPdf = True
+
+    if not segmentPdf:
+        if model.startswith("gpt"):
+            inputPromptTokenCount = (await OPENAI_LLM_ENGINE.responses.input_tokens.count(model=model, instructions=SYSTEM_INSTRUCTION, input=[{"role": "user", "content": [{"type": "input_file", "filename": f"{uuid.uuid4().hex[0:5]}.pdf", "file_data": f"data:application/pdf;base64,{PDFBase64Data}"}, {"type": "input_text", "text": PROMPT}]}])).input_tokens
+        else:
+            inputPromptTokenCount = (await GEMINI_LLM_ENGINE.aio.models.count_tokens(model=model, contents=types.Content(role="user", parts=[types.Part.from_bytes(data=PDFBytes, mime_type="application/pdf"), types.Part.from_text(text=f"{SYSTEM_INSTRUCTION}\n{PROMPT}")]))).total_tokens
+        logMessage += f"- **{model} pre-inspect input token count:** `{inputPromptTokenCount:,} tokens`\n"
+        print(f"[{model} SCAT Analysis] pre-inspect Input token count: {inputPromptTokenCount:,} tokens\n")
+        if inputPromptTokenCount > LLM_MODEL_INFORMATION[model]["Maximum Input Tokens"]:
+            segmentPdf = True
+            print(f"[{model} SCAT Analysis] Input token will exceed {model} context windows, will scan by segments!")
+            logMessage += f"- **Input Token Exceed {model} Context Window**\n"
+    else:
+        inputPromptTokenCount = 0
+    PDFBytes = None # Empty file content in RAM to free up resources
+
+    if segmentPdf:
+        print(f"[{model} SCAT Analysis] Begin finding the most optimized PDF segment value for {model}")
+        logMessage += f"- **Finding the optimized PDF segment value for {model}**"
+        segmentSize = PDFsize
+        pageSegment = PDFPageCount
+        contextWindowLimit = LLM_MODEL_INFORMATION[model][ "Maximum Input Tokens"]
+        while inputPromptTokenCount >= contextWindowLimit or segmentSize > 50000000 or (model.startswith("gemini") and pageSegment > 1000):
+            pageSegment = math.floor(pageSegment * 0.9)
+            print(f"Testing PDF segment value of {pageSegment} pages")
+            logMessage += f"\t + **Testing Input Token Count For Segment Value {pageSegment}**\n"
+            PDFWriter = PdfWriter()
+            for pageIndex in range(0, pageSegment):
+                PDFWriter.add_page(PDFReader.pages[pageIndex])
+            with io.BytesIO() as PDFBuffer:
+                PDFWriter.write(PDFBuffer)
+                PDFSegmentBytes = PDFBuffer.getvalue()
+            segmentSize = len(PDFSegmentBytes)
+            PDFSegmentBase64 = (await asyncio.to_thread(base64.b64encode, PDFSegmentBytes)).decode("utf-8")
+            if model.startswith("gpt"):
+                inputPromptTokenCount = (await OPENAI_LLM_ENGINE.responses.input_tokens.count(model=model, instructions=SYSTEM_INSTRUCTION, input=[{"role": "user", "content": [{"type": "input_file", "filename": f"{uuid.uuid4().hex[0:5]}.pdf", "file_data": f"data:application/pdf;base64,{PDFSegmentBase64}"}, {"type": "input_text", "text": PROMPT}]}])).input_tokens
+            else:
+                inputPromptTokenCount = (await GEMINI_LLM_ENGINE.aio.models.count_tokens(model=model, contents=types.Content(role="user", parts=[types.Part.from_bytes(data=PDFSegmentBytes, mime_type="application/pdf"), types.Part.from_text(text=f"{SYSTEM_INSTRUCTION}\n{PROMPT}")]))).total_tokens
+            print(f"[{model} SCAT Analysis] Input Token Count For The Segment Value: {inputPromptTokenCount:,} tokens")
+            print(f"[{model} SCAT Analysis] Total Size For The Segment Value: {segmentSize:,} bytes")
+            logMessage += (f"\t\t + **Total Input Token Count:** `{inputPromptTokenCount:,}`\n"
+                           f"\t\t + **Total Size:** `{segmentSize:,} bytes`\n")
+            PDFSegmentBytes = None
+            PDFSegmentBase64 = None
+        print(f"[{model} SCAT Analysis] The optimal PDF segment value is: {pageSegment}")
+        logMessage += f"\t + **Optimal PDF segment value is:** {pageSegment:,}\n"
+        PDFBase64Datas = asyncio.to_thread(_segmentPDFToBase64, PDFReader, PDFPageCount, pageSegment)
+    else:
+        PDFBase64Datas = {"Full PDF Pages": PDFBase64Data}
+
+    print(f"[{model} SCAT Analysis] Start scanning PDF frames with LLM model {model}")
+    ScanResult = ""
+    for segment, PDFBase64Data in PDFBase64Datas.items():
+        print(f"[{model} SCAT Analysis] Scanning PDF segment: {segment}")
+        logMessage += f"\t\t + **PDF Segment: {segment}**\n"
+        for retryAttempt in range(0, 3):
+            print(f"[{model} SCAT Analysis] Attempt #{retryAttempt + 1}")
+            logMessage += f"\t\t + **{model} request attempt:** `{retryAttempt + 1}`\n"
+            if model.startswith("gpt"):
+                requestQuery = [{"role": "user", "content": [{"type": "input_file", "filename": f"{uuid.uuid4().hex[0:5]}.pdf", "file_data": f"data:application/pdf;base64,{PDFBase64Data}"}, {"type": "input_text", "text": PROMPT}]}]
+            else:
+                requestQuery = [{"type": "document", "data": PDFBase64Data, "mime_type": "application/pdf"}, {"type": "text", "text": PROMPT}]
+
+            try:
+                if model.startswith("gpt"):
+                    # https://developers.openai.com/api/reference/resources/responses/methods/create/
+                    response = await OPENAI_LLM_ENGINE.responses.create(model=model, instructions=SYSTEM_INSTRUCTION, input=requestQuery, max_output_tokens=2000, reasoning={"effort": "xhigh"}, store=True)
+                    print(f"[{model} SCAT Analysis] Input Tokens: {response.usage.input_tokens}")
+                    print(f"[{model} SCAT Analysis] Output Tokens: {response.usage.output_tokens}")
+                    logMessage += (f"\t\t\t + **Input Token Count:** `{response.usage.input_tokens:,} tokens`\n"
+                                   f"\t\t\t + **Output Token Count:** `{response.usage.output_tokens:,} tokens`\n")
+                else:
+                    # https://aistudio.google.com/api-reference/interactions-api/create-interaction
+                    response = await GEMINI_LLM_ENGINE.aio.interactions.create(model=model, input=requestQuery, system_instruction=SYSTEM_INSTRUCTION, generation_config={"thinking_level": "high", "max_output_tokens": 2000}, store=True)
+                    print(f"[{model} SCAT Analysis] Input Tokens: {response.usage.total_input_tokens}")
+                    print(f"[{model} SCAT Analysis] Output Tokens: {response.usage.total_output_tokens}")
+                    logMessage += (f"\t\t\t + **Input Token Count:** `{response.usage.total_input_tokens:,} tokens`\n"
+                                   f"\t\t\t + **Output Token Count:** `{response.usage.total_output_tokens:,} tokens`\n")
+                ScanResult = response.output_text
+                print(f"[{model} SCAT Analysis] SCAT scan results: {ScanResult}")
+                totalCost = await calculateUsageCost(model, response)
+                print(f"[{model} SCAT Analysis] Total Cost: ${totalCost}")
+                logMessage += f"\t\t\t + **Total Cost:** `${totalCost}`\n"
+                logMessage += f"\t\t\t + **SCAT Results:** `{ScanResult}`\n"
+                if ScanResult.startswith(("True", "true")):
+                    return ScanResult, logMessage
+                break
+
+            except (openai.RateLimitError, openai.APITimeoutError) as Error:
+                print(f"[{model} SCAT Analysis] Rate Limit/API Timeout Error: {Error}, attempt retry {retryAttempt + 1} in 15 seconds")
+                logMessage += f"\t\t\t + **Rate Limit Error:** `{Error}`\n"
+                await asyncio.sleep(15)
+
+            except openai.BadRequestError as BadRequestError:
+                print(f"[{model} SCAT Analysis] Bad Request Error: {BadRequestError}")
+                logMessage += f"\t\t\t + **Bad Request Error:** `{BadRequestError}`\n"
+                return f"ERROR::{BadRequestError}", logMessage
+
+            except ConnectTimeout as e:
+                print(f"[{model} SCAT Analysis] API Timeout Error: {e}, attempt retry {retryAttempt + 1} in 15 seconds")
+                logMessage += f"\t\t\t + **Time Out Error:** `{e}`\n"
+                await asyncio.sleep(15)
+
+            except errors.APIError as GeminiAPIError:
+                if GeminiAPIError.code == 429:
+                    print(f"[{model} SCAT Analysis] Rate Limit Error: {GeminiAPIError.message}, attempt retry {retryAttempt + 1} in 15 seconds")
+                    logMessage += f"\t\t\t + **Rate Limit Error:** `{GeminiAPIError.message}`\n"
+                    await asyncio.sleep(15)
+                else:
+                    print(f"[{model} SCAT Analysis] Error: {GeminiAPIError.message}")
+                    logMessage += f"\t\t\t + **LLM Request Error:** `{GeminiAPIError.message}`\n"
+                    return f"ERROR::{GeminiAPIError.message}", logMessage
+
+            except Exception as e:
+                print(f"[{model} SCAT Analysis] Receive Error: {e}")
+                logMessage += f"\t\t\t + **LLM Request Error:** `{e}`\n"
+                return f"ERROR::{e}", logMessage
+
+        if not ScanResult:
+            print(f"Too Many Retry Attempts!")
+            logMessage += f"\t\t\t + **Too Many Retry Attempts!**\n"
+            return f"ERROR::TOO MANY RETRIES!", logMessage
+
+    return "Nothing Malicious", logMessage # Return the last scan result
+
+
+async def llmSCATOnText(model: str, filepath: str, logMessage: str) -> Tuple[str, str]:
+    """
+    Description: Static Code Analysis on the raw code content of the decompiled script with OpenAI and Gemini
+    :param model: The name of the model
     :param filepath: The filepath to be analyzed
     :param logMessage: Current Log Message
     :param LLM: Which LLM provider to use
-    :return: The result of the analysis
+    :return: The result of the analysis and the updated log message
     """
+    logMessage += (f"- **Begin SCAT Analysis With {model}**\n"
+                   f"- **Decompiled File:** `{os.path.basename(filepath)}`\n")
     async with aiofiles.open(filepath, "r") as file:
         content = await file.readlines()
-    smallestContextWindow = min([LLM_MODEL_INFORMATION[GPT_MODEL]["Maximum Input Tokens"], LLM_MODEL_INFORMATION[GPT_MODEL]["TPM"]])
-    if LLM == "OpenAI":
-        LLMModel = GPT_MODEL
-    else:
-        LLMModel = GEMINI_MODEL
+
+    contextWindow = LLM_MODEL_INFORMATION[model]["Maximum Input Tokens"]
     inputPromptTokenCount = 100000000000
-    divideValue = 2
-    chunkSize = max(1, int(len(content) // divideValue))
-    while inputPromptTokenCount > smallestContextWindow - 4000:
-        if LLM == "OpenAI":
-            inputPromptTokenCount = (await GPTclient.responses.input_tokens.count(model=GPT_MODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": "".join(content[0:chunkSize])}]}])).input_tokens
+    chunkSize = len(content)
+    while inputPromptTokenCount > contextWindow - 4000:
+        if model.startswith("gpt"):
+            inputPromptTokenCount = (await OPENAI_LLM_ENGINE.responses.input_tokens.count(model=model, instructions=SYSTEM_INSTRUCTION, input=[{"role": "user", "content": [{"type": "input_text", "text": "".join(content[0:chunkSize])}]}])).input_tokens
         else:
-            inputPromptTokenCount = (await GeminiClient.aio.models.count_tokens(model=GEMINI_MODEL, contents="".join(content[0:chunkSize]))).total_tokens
-        divideValue += 0.5
-        chunkSize = max(1, round(len(content) // divideValue))
+            inputPromptTokenCount = (await GEMINI_LLM_ENGINE.aio.models.count_tokens(model=model, contents="".join(content[0:chunkSize]))).total_tokens
+        chunkSize = math.floor(chunkSize * 0.9)
+
     summarization = ""
     for i in range(0, len(content), chunkSize):
-        nextChunkSize = i + chunkSize
+        nextChunkSize = min(i + chunkSize, len(content))
         if i == 0:
             prompt = ("# Context\n"
                       "Below is a snippet of a large binary file decompiled by Ghidra (via Ghidhrathon)\n"
@@ -203,8 +240,6 @@ async def partialLLMSCAT(filepath: str, logMessage: str, LLM: Literal["OpenAI", 
                       f"# RESPONSE FORMAT:\n"
                       f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
         else:
-            if nextChunkSize > len(content):
-                nextChunkSize = i + (len(content) - i)
             prompt = ("# Context\n"
                       "The following are the analysis summarization of a snippet of a large binary file decompiled by Ghidra (via Ghidhrathon)\n"
                       f"The snippet starts at **Line {i - chunkSize + 1}** to **Line {i}**\n"
@@ -219,59 +254,71 @@ async def partialLLMSCAT(filepath: str, logMessage: str, LLM: Literal["OpenAI", 
                       f"```\n"
                       f"# RESPONSE FORMAT:\n"
                       f"If you suspect it is malware, **START** the response with **True** or **False** with **NO BOLD** and **NO ITALIC STYLE** and **EXPLAIN WHY!**")
-        if LLM == "OpenAI":
+
+        logMessage += f"- **Partial {model} SCAT from Line {i + 1} to Line {i + chunkSize}:**\n"
+        textResponse = ""
+        for retryAttempt in range(1, 4):
+            print(f"[{model} SCAT Analysis] Request Attempt {retryAttempt}")
+            logMessage += f"\t- **Request Attempt {retryAttempt}**\n"
             try:
-                response = await GPTclient.responses.create(model=GPT_MODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}], temperature=0, store=True, max_output_tokens=5000)
-            except Exception as Error:
-                print(f"[Open AI SCAT Model {LLMModel}] {Error}")
-                logMessage += f"- **Partial {LLMModel} SCAT from Line {i + 1} to Line {i + chunkSize} Result:** `{Error}. Retry after 15s`\n"
-                print(f"Attempt one more retry after 15s")
+                if model.startswith("gpt"):
+                    response = await OPENAI_LLM_ENGINE.responses.create(model=model, instructions=SYSTEM_INSTRUCTION, input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}], reasoning={"effort": "xhigh"}, max_output_tokens=2000, store=True)
+                    totalInputTokens = response.usage.input_tokens
+                    totalOutputTokens = response.usage.output_tokens
+                else:
+                    response = await GEMINI_LLM_ENGINE.aio.interactions.create(model=model, input=prompt, system_instruction=SYSTEM_INSTRUCTION, generation_config={"thinking_level": "high", "max_output_tokens": 2000}, store=True)
+                    totalInputTokens = response.usage.total_input_tokens
+                    totalOutputTokens = response.usage.total_output_tokens
+                totalCost = await calculateUsageCost(model, response)
+                textResponse = response.output_text
+                print(f"[{model} SCAT Analysis] SCAT analysis from line {i + 1} to line {nextChunkSize}")
+                print(f"[{model} SCAT Analysis] Total Input Tokens: {totalInputTokens:,}")
+                print(f"[{model} SCAT Analysis] Total Output Tokens: {totalOutputTokens:,}")
+                print(f"[{model} SCAT Analysis] Total Cost: ${totalCost}")
+                print(f"[{model} SCAT Analysis] Analysis Result: {textResponse}")
+                logMessage += (f"\t+ **Total Input Tokens Count:** `{totalInputTokens:,} tokens`\n"
+                               f"\t+ **Total Output Tokens Count:** `{totalOutputTokens:,} tokens`\n"
+                               f"\t+ **Total Cost:** `${totalCost}`\n"
+                               f"\t+ **SCAT Result:**\n{textResponse}\n")
+                if textResponse.startswith(("True", "true")):
+                    print(f"[{model} SCAT Analysis] Partial Analysis at line ** {i + 1} to {nextChunkSize} flagged malicious!!!")
+                    return textResponse, logMessage
+                summarization = textResponse
+                break
+
+            except (openai.RateLimitError, openai.APITimeoutError) as Error:
+                print(f"[{model} SCAT Analysis] Rate Limit/API Timeout Error: {Error}, attempt retry {retryAttempt + 2} in 15 seconds")
+                logMessage += f"\t + **Rate Limit Error:** `{Error}`\n"
                 await asyncio.sleep(15)
-                try:
-                    response = await GPTclient.responses.create(model=GPT_MODEL, instructions="You are a cybersecurity analyst on a disassemble file for potential malware detection", input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}], temperature=0, store=True, max_output_tokens=5000)
-                except Exception as Error:
-                    print(f"[Open AI SCAT Model {LLMModel}] {Error}")
-                    logMessage += f"- **Partial {LLMModel} SCAT from Line {i + 1} to Line {i + chunkSize} Result:** `{Error}`\n"
-                    return False, "OpenAI API Error", logMessage
-            inputPromptTokenCount = response.usage.input_tokens
-            totalCachedRead = response.usage.input_tokens_details.cached_tokens
-            totalRawInputTokens = response.usage.input_tokens - totalCachedRead
-            outputPromptTokenCount = response.usage.output_tokens
-            textResponse = response.output_text
-            print(f"[Open AI SCAT Model {LLMModel}] Total Input Tokens: {inputPromptTokenCount}")
-            print(f"[Open AI SCAT Model {LLMModel}] Total Output Tokens: {outputPromptTokenCount}")
-        else:
-            try:
-                response = await GeminiClient.aio.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=types.GenerateContentConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection", max_output_tokens=5000, temperature=0))
-            except Exception as Error:
-                print(f"[Gemini AI SCAT Model {LLMModel}] {Error}")
-                logMessage += f"- **Partial {LLMModel} SCAT from Line {i + 1} to Line {i + chunkSize} Result:** `{Error}. Retry after 15s`\n"
-                print(f"Attempt one more retry after 15s")
+
+            except openai.BadRequestError as BadRequestError:
+                print(f"[{model} SCAT Analysis] Bad Request Error: {BadRequestError}")
+                logMessage += f"\t + **Bad Request Error:** `{BadRequestError}`\n"
+                return f"ERROR::{BadRequestError}", logMessage
+
+            except ConnectTimeout as e:
+                print(f"[{model} SCAT Analysis] API Timeout Error: {e}, attempt retry {retryAttempt + 1} in 15 seconds")
+                logMessage += f"\t + **Time Out Error:** `{e}`\n"
                 await asyncio.sleep(15)
-                try:
-                    response = await GeminiClient.aio.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=types.GenerateContentConfig(system_instruction="You are a cybersecurity analyst on a disassemble file for potential malware detection", max_output_tokens=5000, temperature=0))
-                except Exception as Error:
-                    print(f"[Gemini AI SCAT Model {LLMModel}] {Error}")
-                    logMessage += f"- **Partial {LLMModel} SCAT from Line {i + 1} to Line {i + chunkSize} Result:** `{Error}`\n"
-                    return False, "Gemini API Error", logMessage
-            inputPromptTokenCount = response.usage_metadata.prompt_token_count
-            totalCachedRead = response.usage_metadata.cached_content_token_count or 0
-            totalRawInputTokens = response.usage_metadata.prompt_token_count - totalCachedRead
-            outputPromptTokenCount  = response.usage_metadata.total_token_count - inputPromptTokenCount
-            textResponse = response.text
-            print(f"[Gemini SCAT Model {LLMModel}] Total Input Tokens: {inputPromptTokenCount}")
-            print(f"[Gemini SCAT Model {LLMModel}] Total Output Tokens: {outputPromptTokenCount}")
-        cMonth = time.ctime(time.time()).split()[1]
-        cDay = time.ctime(time.time()).split()[2]
-        totalCost = calculateUsageCost(LLMModel, [totalRawInputTokens, totalCachedRead], outputPromptTokenCount)
-        await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMMonthlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, LLMModel, totalCost], MonthlyCSVLock)
-        await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMYearlyUsage.csv", "a", [f"{cMonth} {cDay}", inputPromptTokenCount, outputPromptTokenCount, LLMModel, totalCost], YearlyCSVLock)
-        logMessage += (f"- **Partial {LLMModel} SCAT from Line {i + 1} to Line {i + chunkSize}:**\n"
-                       f"\t+ **Total Input Tokens Count:** `{inputPromptTokenCount:,} tokens`\n"
-                       f"\t+ **Total Output Tokens Count:** `{outputPromptTokenCount:,} tokens`\n"
-                       f"\t+ **{LLMModel} SCAT Result:**\n{textResponse}\n")
-        if textResponse.startswith(("True", "true")):
-            print(f"[SCAT Model {LLMModel}] Partial Analysis at line ** {i + 1} to {nextChunkSize} flagged malicious!!!\nAnalysis Summary: {textResponse}")
-            return True, textResponse, logMessage
-        summarization = textResponse
-    return False, "Nothing Malicious", logMessage
+
+            except errors.APIError as GeminiAPIError:
+                if GeminiAPIError.code == 429:
+                    print(f"[{model} SCAT Analysis] Rate Limit Error: {GeminiAPIError.message}, attempt retry {retryAttempt + 1} in 15 seconds")
+                    logMessage += f"\t + **Rate Limit Error:** `{GeminiAPIError.message}`\n"
+                    await asyncio.sleep(15)
+                else:
+                    print(f"[{model} SCAT Analysis] Error: {GeminiAPIError.message}")
+                    logMessage += f"\t + **LLM Request Error:** `{GeminiAPIError.message}`\n"
+                    return f"ERROR::{GeminiAPIError.message}", logMessage
+
+            except Exception as e:
+                print(f"[{model} SCAT Analysis] Receive Error: {e}")
+                logMessage += f"\t + **LLM Request Error:** `{e}`\n"
+                return f"ERROR::{e}", logMessage
+
+        if not textResponse:
+            print(f"Too Many Retry Attempts!")
+            logMessage += f"\t + **Too Many Retry Attempts!**\n"
+            return f"ERROR::TOO MANY RETRIES!", logMessage
+
+    return "Nothing Malicious", logMessage
