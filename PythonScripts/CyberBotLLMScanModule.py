@@ -101,7 +101,7 @@ async def llmSCAT(model: str, pdfPath: str, logMessage: str) -> Tuple[str, str]:
             pageSegment = math.floor(pageSegment * 0.9)
             print(f"Testing PDF segment value of {pageSegment} pages")
             logMessage += f"\t + **Testing Input Token Count For Segment Value {pageSegment}**\n"
-            if (model.startswith("gemeni") and pageSegment < 1000) or model.startswith("gpt"):
+            if (model.startswith("gemini") and pageSegment < 1000) or model.startswith("gpt"):
                 PDFWriter = PdfWriter()
                 for pageIndex in range(0, pageSegment):
                     PDFWriter.add_page(PDFReader.pages[pageIndex])
