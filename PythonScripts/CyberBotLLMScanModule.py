@@ -93,7 +93,7 @@ async def llmSCAT(model: str, pdfPath: str, logMessage: str) -> Tuple[str, str]:
 
     if segmentPdf:
         print(f"[{model} SCAT Analysis] Begin finding the most optimized PDF segment value for {model}")
-        logMessage += f"- **Finding the optimized PDF segment value for {model}**"
+        logMessage += f"- **Finding the optimized PDF segment value for {model}**\n"
         segmentSize = PDFsize
         pageSegment = PDFPageCount
         contextWindowLimit = LLM_MODEL_INFORMATION[model][ "Maximum Input Tokens"]
@@ -130,10 +130,10 @@ async def llmSCAT(model: str, pdfPath: str, logMessage: str) -> Tuple[str, str]:
     ScanResult = ""
     for segment, PDFBase64Data in PDFBase64Datas.items():
         print(f"[{model} SCAT Analysis] Scanning PDF segment: {segment}")
-        logMessage += f"\t\t + **PDF Segment: {segment}**\n"
+        logMessage += f"- **PDF Segment: {segment}**\n"
         for retryAttempt in range(0, 3):
             print(f"[{model} SCAT Analysis] Attempt #{retryAttempt + 1}")
-            logMessage += f"\t\t + **{model} request attempt:** `{retryAttempt + 1}`\n"
+            logMessage += f"\t + **{model} request attempt:** `{retryAttempt + 1}`\n"
             if model.startswith("gpt"):
                 requestQuery = [{"role": "user", "content": [{"type": "input_file", "filename": f"{uuid.uuid4().hex[0:5]}.pdf", "file_data": f"data:application/pdf;base64,{PDFBase64Data}"}, {"type": "input_text", "text": PROMPT}]}]
             else:
@@ -145,58 +145,58 @@ async def llmSCAT(model: str, pdfPath: str, logMessage: str) -> Tuple[str, str]:
                     response = await OPENAI_LLM_ENGINE.responses.create(model=model, instructions=SYSTEM_INSTRUCTION, input=requestQuery, max_output_tokens=2000, reasoning={"effort": "xhigh"}, store=True)
                     print(f"[{model} SCAT Analysis] Input Tokens: {response.usage.input_tokens}")
                     print(f"[{model} SCAT Analysis] Output Tokens: {response.usage.output_tokens}")
-                    logMessage += (f"\t\t\t + **Input Token Count:** `{response.usage.input_tokens:,} tokens`\n"
-                                   f"\t\t\t + **Output Token Count:** `{response.usage.output_tokens:,} tokens`\n")
+                    logMessage += (f"\t\t + **Input Token Count:** `{response.usage.input_tokens:,} tokens`\n"
+                                   f"\t\t + **Output Token Count:** `{response.usage.output_tokens:,} tokens`\n")
                 else:
                     # https://aistudio.google.com/api-reference/interactions-api/create-interaction
                     response = await GEMINI_LLM_ENGINE.aio.interactions.create(model=model, input=requestQuery, system_instruction=SYSTEM_INSTRUCTION, generation_config={"thinking_level": "high", "max_output_tokens": 2000}, store=True)
                     print(f"[{model} SCAT Analysis] Input Tokens: {response.usage.total_input_tokens}")
                     print(f"[{model} SCAT Analysis] Output Tokens: {response.usage.total_output_tokens}")
-                    logMessage += (f"\t\t\t + **Input Token Count:** `{response.usage.total_input_tokens:,} tokens`\n"
-                                   f"\t\t\t + **Output Token Count:** `{response.usage.total_output_tokens:,} tokens`\n")
+                    logMessage += (f"\t\t + **Input Token Count:** `{response.usage.total_input_tokens:,} tokens`\n"
+                                   f"\t\t + **Output Token Count:** `{response.usage.total_output_tokens:,} tokens`\n")
                 ScanResult = response.output_text
                 print(f"[{model} SCAT Analysis] SCAT scan results: {ScanResult}")
                 totalCost = await calculateUsageCost(model, response)
                 print(f"[{model} SCAT Analysis] Total Cost: ${totalCost}")
-                logMessage += f"\t\t\t + **Total Cost:** `${totalCost}`\n"
-                logMessage += f"\t\t\t + **SCAT Results:** `{ScanResult}`\n"
+                logMessage += f"\t\t + **Total Cost:** `${totalCost}`\n"
+                logMessage += f"\t\t + **SCAT Results:** {ScanResult}\n\n"
                 if ScanResult.startswith(("True", "true")):
                     return ScanResult, logMessage
                 break
 
             except (openai.RateLimitError, openai.APITimeoutError) as Error:
                 print(f"[{model} SCAT Analysis] Rate Limit/API Timeout Error: {Error}, attempt retry {retryAttempt + 1} in 15 seconds")
-                logMessage += f"\t\t\t + **Rate Limit Error:** `{Error}`\n"
+                logMessage += f"\t\t + **Rate Limit Error:** `{Error}`\n"
                 await asyncio.sleep(15)
 
             except openai.BadRequestError as BadRequestError:
                 print(f"[{model} SCAT Analysis] Bad Request Error: {BadRequestError}")
-                logMessage += f"\t\t\t + **Bad Request Error:** `{BadRequestError}`\n"
+                logMessage += f"\t\t + **Bad Request Error:** `{BadRequestError}`\n"
                 return f"ERROR::{BadRequestError}", logMessage
 
             except ConnectTimeout as e:
                 print(f"[{model} SCAT Analysis] API Timeout Error: {e}, attempt retry {retryAttempt + 1} in 15 seconds")
-                logMessage += f"\t\t\t + **Time Out Error:** `{e}`\n"
+                logMessage += f"\t\t + **Time Out Error:** `{e}`\n"
                 await asyncio.sleep(15)
 
             except errors.APIError as GeminiAPIError:
                 if GeminiAPIError.code == 429:
                     print(f"[{model} SCAT Analysis] Rate Limit Error: {GeminiAPIError.message}, attempt retry {retryAttempt + 1} in 15 seconds")
-                    logMessage += f"\t\t\t + **Rate Limit Error:** `{GeminiAPIError.message}`\n"
+                    logMessage += f"\t\t + **Rate Limit Error:** `{GeminiAPIError.message}`\n"
                     await asyncio.sleep(15)
                 else:
                     print(f"[{model} SCAT Analysis] Error: {GeminiAPIError.message}")
-                    logMessage += f"\t\t\t + **LLM Request Error:** `{GeminiAPIError.message}`\n"
+                    logMessage += f"\t\t + **LLM Request Error:** `{GeminiAPIError.message}`\n"
                     return f"ERROR::{GeminiAPIError.message}", logMessage
 
             except Exception as e:
                 print(f"[{model} SCAT Analysis] Receive Error: {e}")
-                logMessage += f"\t\t\t + **LLM Request Error:** `{e}`\n"
+                logMessage += f"\t\t + **LLM Request Error:** `{e}`\n"
                 return f"ERROR::{e}", logMessage
 
         if not ScanResult:
             print(f"Too Many Retry Attempts!")
-            logMessage += f"\t\t\t + **Too Many Retry Attempts!**\n"
+            logMessage += f"\t\t + **Too Many Retry Attempts!**\n"
             return f"ERROR::TOO MANY RETRIES!", logMessage
 
     return "Nothing Malicious", logMessage # Return the last scan result
