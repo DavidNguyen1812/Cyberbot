@@ -5,7 +5,7 @@ from CyberBotRuntimeModule import *
 from CyberBotFileUtilitiesModule import AttachmentSizeLimitExceeded, CyberbotFileScanMessageFormat, checkingFileExtensionFromDisk, checkingHashFromDisk, hashAttachmentWithoutDownload, hashedScanLock, sendFileScanProgress
 from CyberBotGhidraIntegrationModule import ghidraDecompile
 from CyberBotHashDatabaseModule import addingHashedData, checkingCleanData, checkingFlaggedMaliciousData
-from CyberBotLLMScanModule import GeminiSCAT, openAISCAT, partialLLMSCAT
+from CyberBotLLMScanModule import llmSCAT, llmSCATOnText
 from CyberBotSecurityUtilitiesModule import txtToPDFConversion
 from CyberBotVirusTotalModule import virusTotalFileScan
 
@@ -37,7 +37,14 @@ async def scanOneAttachment(attachmentUrl: str, RootFileName: str, message=None,
 
     """Retrieving File Attachment Size And Content Via The Attachment URL To RAM"""
     try:
-        RootFileHashed, FullContentLength, CachedFileBytesContent, attachmentUrl = await hashAttachmentWithoutDownload(attachmentUrl)
+        RootFileHashed, FullContentLength, CachedFileBytesContent, error = await hashAttachmentWithoutDownload(attachmentUrl)
+        if error:
+            print("Error retrieving Discord attachment content!")
+            logMessage += (f"- **Error retrieving Discord attachment content!**\n"
+                           f"- **Scan Result:** `ERROR`\n"
+                           f"- **Reason:** `Can not retrieve attachment content!`\n"
+                           f"- **Scan Duration In Second(s):** {time.perf_counter() - ScanStartTime:.2f}s\n\n---\n\n")
+            return FileScanResult(RootFileName, "error", CyberbotFileScanMessageFormat(f"File name {RootFileName} can't be scan due to error getting the content!", "UNVERIFIED", RootFileName, "CAN'T BE DETERMINED", "CAN'T BE DETERMINED"), logMessage)
 
         """Checking file true extension"""
         RootFileTrueExt = await asyncio.to_thread(checkingRealFileExtension,CachedFileBytesContent, RootFileName)
@@ -88,10 +95,10 @@ async def scanOneAttachment(attachmentUrl: str, RootFileName: str, message=None,
         else:
             status = "UNVERIFIED"
         logMessage += (f"- **Scan Result:** `{status}`\n"
-                       f"- **Reason:** `{sharedResult.sendingMessage}`\n"
+                       f"- **Reason:** `{sharedResult.reason}`\n"
                        f"- **Scan Duration In Second(s):** {time.perf_counter() - ScanStartTime:.2f}s\n\n---\n\n")
         print(f"File {RootFileName} scan duration: {time.perf_counter() - ScanStartTime:.2f}s")
-        return FileScanResult(RootFileName, sharedResult.status, CyberbotFileScanMessageFormat(sharedResult.sendingMessage, status, RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
+        return FileScanResult(sharedResult.RootFileName, sharedResult.status, sharedResult.sendingMessage, sharedResult.logMessage, sharedResult.RootFileHashed)
 
     try:
         if await checkingFlaggedMaliciousData(RootFileHashed, "All Extension"):
@@ -307,163 +314,152 @@ async def analyzeAttachmentContents(RootFileName: str, RootFileTrueExt: str, fil
 
         """Start scanning for the extracted file contents at mountPoint with Virus Total"""
         for filepath in filePaths:
-            if os.path.islink(filepath) or os.path.realpath(filepath) != os.path.abspath(filepath):
-                await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
-                               f"- **Reason:** `The archive/disk image file {RootFileName} contains a file acts as an unsafe symbolic link {filepath}`\n")
-                return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"The archive/disk image file {RootFileName} contains a file acts as an unsafe symbolic link {filepath}", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
-            filename = os.path.basename(filepath)
-            HashedFileData = await checkingHashFromDisk(filepath)
-            fileExt = await checkingFileExtensionFromDisk(filepath, filename)
-            if HashedFileData != RootFileHashed:
-                logMessage += (f"- **Uncompressed File Name:** `{filename.split("_")[-1]}`\n"
-                           f"- **Uncompressed File Size:** `{os.path.getsize(filepath):,} bytes`\n"
-                           f"- **Uncompressed File SHA-256 Hash:** `{HashedFileData}`\n"
-                           f"- **Uncompressed File True Extension:** `{fileExt}`\n")
-                async with hashedScanLock("file:" + HashedFileData):
-                    if await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
-                        print(f"File {filename} content already flagged malicious!")
-                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                        logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
-                                       f"- **Reason:** `File content already flagged Malicious from Cyberbot scan history!`\n")
-                        return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"File {RootFileName} contains another file {filename} already flagged Malicious from Cyberbot scan history!", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
-                    elif await checkingCleanData(HashedFileData, "All Extension"):
-                        print(f"File {filename} content already passed previous scan, skip Virus Total scanning!")
-                        logMessage += f"- **Virus Total Scan Result:** `SKIPPED - The file content SHA-256 hash already passed previous scan`\n"
-                    else:
-                        print(f"Start scanning {filename} contents with Virus Total...")
-                        virusTotalResult = await virusTotalFileScan(filepath)
-                        if virusTotalResult.startswith("Error"):
-                            logMessage += f"- **Virus Total Scan Result:** `{virusTotalResult}`\n"
-                            unverifiedReasons += f"`\n- **Virus Total Scan Result For {filename} inside file {RootFileName}:** `An Error Occurred While Scanning File Content`"
+            async with FILE_SCAN_SEMAPHORE:
+                if os.path.islink(filepath) or os.path.realpath(filepath) != os.path.abspath(filepath):
+                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                    logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
+                                   f"- **Reason:** `The archive/disk image file {RootFileName} contains a file acts as an unsafe symbolic link {filepath}`\n")
+                    return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"The archive/disk image file {RootFileName} contains a file acts as an unsafe symbolic link {filepath}", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
+                filename = os.path.basename(filepath)
+                HashedFileData = await checkingHashFromDisk(filepath)
+                fileExt = await checkingFileExtensionFromDisk(filepath, filename)
+                if HashedFileData != RootFileHashed:
+                    logMessage += (f"- **Uncompressed File Name:** `{filename.split("_")[-1]}`\n"
+                               f"- **Uncompressed File Size:** `{os.path.getsize(filepath):,} bytes`\n"
+                               f"- **Uncompressed File SHA-256 Hash:** `{HashedFileData}`\n"
+                               f"- **Uncompressed File True Extension:** `{fileExt}`\n")
+                    async with hashedScanLock("file:" + HashedFileData):
+                        if await checkingFlaggedMaliciousData(HashedFileData, "All Extension"):
+                            print(f"File {filename} content already flagged malicious!")
+                            await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                            logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
+                                           f"- **Reason:** `File content already flagged Malicious from Cyberbot scan history!`\n")
+                            return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"File {RootFileName} contains another file {filename} already flagged Malicious from Cyberbot scan history!", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
+                        elif await checkingCleanData(HashedFileData, "All Extension"):
+                            print(f"File {filename} content already passed previous scan, skip Virus Total scanning!")
+                            logMessage += f"- **Virus Total Scan Result:** `SKIPPED - The file content SHA-256 hash already passed previous scan`\n"
                         else:
-                            try:
-                                virusTotalResult = virusTotalResult.split(":")
-                                virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
-                                if not isSilent or int(virusTotalResult[0]) > 0 or int(virusTotalResult[1]) > 0:
-                                    await sendFileScanProgress(message, RootFileName, f"Virus Total Report for {filename} inside file {RootFileName}: {virusTotalReport}")
-                                logMessage += f"- **Virus Total Scan Result:** `{virusTotalReport}`\n"
-                                if int(virusTotalResult[0]) > 0:
-                                    print(f"One or more scan engine from Virus Total scan flagged the file content as malicious!")
-                                    await addingHashedData(HashedFileData, fileExt, True)
-                                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                                    logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
-                                                   f"- **Reason:** `One or more scan engine from Virus Total scan flagged the file content as malicious!`\n")
-                                    return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"One or more scan engine from Virus Total scan flagged the file content {filename} inside {RootFileName} as malicious!`\n**Virus Total Scan Report:** `{virusTotalReport}", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
-                                if int(virusTotalResult[1]) > 0:
-                                    print(f"One or more scan engine from Virus Total scan flagged the file content as suspicious!")
-                                    logMessage += f"- **Virus Total Scan Note:** `One or more scan engine from Virus Total scan flagged the file content as suspicious!`\n"
-                                    unverifiedReasons += f"\n- **Virus Total Scan Result For {filename} inside file {RootFileName}:** `One or more scan engine from Virus Total scan for {filename} inside file {RootFileName} flagged the file content as suspicious!`"
-                                elif fileExt not in SUPPORTED_SCRIPT_FILE_FORMATS and fileExt not in SUPPORTED_EXECUTABLE_FILE_FORMATS:
-                                    await addingHashedData(HashedFileData, fileExt, False)
-                            except (ValueError, IndexError):
-                                logMessage += f"- **Virus Total Scan Result:** `Return An Invalid Response`\n"
-                                unverifiedReasons += f"\n- **Virus Total Scan Result For {filename} inside file {RootFileName}:** `VirusTotal returned an invalid response!`"
+                            print(f"Start scanning {filename} contents with Virus Total...")
+                            virusTotalResult = await virusTotalFileScan(filepath)
+                            if virusTotalResult.startswith("Error"):
+                                logMessage += f"- **Virus Total Scan Result:** `{virusTotalResult}`\n"
+                                unverifiedReasons += f"`\n- **Virus Total Scan Result For {filename} inside file {RootFileName}:** `An Error Occurred While Scanning File Content`"
+                            else:
+                                try:
+                                    virusTotalResult = virusTotalResult.split(":")
+                                    virusTotalReport = f"{virusTotalResult[0]} Malicious, {virusTotalResult[1]} Suspicious, {virusTotalResult[2]} Harmless, {virusTotalResult[3]} Undetected"
+                                    if not isSilent or int(virusTotalResult[0]) > 0 or int(virusTotalResult[1]) > 0:
+                                        await sendFileScanProgress(message, RootFileName, f"Virus Total Report for {filename} inside file {RootFileName}: {virusTotalReport}")
+                                    logMessage += f"- **Virus Total Scan Result:** `{virusTotalReport}`\n"
+                                    if int(virusTotalResult[0]) > 0:
+                                        print(f"One or more scan engine from Virus Total scan flagged the file content as malicious!")
+                                        await addingHashedData(HashedFileData, fileExt, True)
+                                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                                        logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
+                                                       f"- **Reason:** `One or more scan engine from Virus Total scan flagged the file content as malicious!`\n")
+                                        return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"One or more scan engine from Virus Total scan flagged the file content {filename} inside {RootFileName} as malicious!`\n**Virus Total Scan Report:** `{virusTotalReport}", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
+                                    if int(virusTotalResult[1]) > 0:
+                                        print(f"One or more scan engine from Virus Total scan flagged the file content as suspicious!")
+                                        logMessage += f"- **Virus Total Scan Note:** `One or more scan engine from Virus Total scan flagged the file content as suspicious!`\n"
+                                        unverifiedReasons += f"\n- **Virus Total Scan Result For {filename} inside file {RootFileName}:** `One or more scan engine from Virus Total scan for {filename} inside file {RootFileName} flagged the file content as suspicious!`"
+                                    elif fileExt not in SUPPORTED_SCRIPT_FILE_FORMATS and fileExt not in SUPPORTED_EXECUTABLE_FILE_FORMATS:
+                                        await addingHashedData(HashedFileData, fileExt, False)
+                                except (ValueError, IndexError):
+                                    logMessage += f"- **Virus Total Scan Result:** `Return An Invalid Response`\n"
+                                    unverifiedReasons += f"\n- **Virus Total Scan Result For {filename} inside file {RootFileName}:** `VirusTotal returned an invalid response!`"
 
-            LLMScat = False
-            if fileExt in SUPPORTED_EXECUTABLE_FILE_FORMATS:
-                """Decompiling Binary File"""
-                print(f"Found compiled/executable/binary file: {filename} | Type: {fileExt}")
-                async with GHIDRA_SEMAPHORE:
-                    outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, tempScanFolder, filename)
-                if outputFilePath != "ERROR" and os.path.isfile(outputFilePath):
-                    logMessage += (f"- **Ghidra Decompilation Result:** `Successfully decompile binary file {f'{filename} inside file {RootFileName}' if isArchive else filename} for LLM Assisted Static Analysis`\n"
-                                   f"- **Decompiled File Name:** `{os.path.basename(outputFilePath)}`\n")
-                    HashedDecompiledData = await checkingHashFromDisk(outputFilePath)
-                    CompiledHashedMap[HashedFileData] = HashedDecompiledData
-                    filepath = outputFilePath
+                LLMScat = False
+                if fileExt in SUPPORTED_EXECUTABLE_FILE_FORMATS:
+                    """Decompiling Binary File"""
+                    print(f"Found compiled/executable/binary file: {filename} | Type: {fileExt}")
+                    async with GHIDRA_SEMAPHORE:
+                        outputFilePath = await asyncio.to_thread(ghidraDecompile, filepath, tempScanFolder, filename)
+                    if outputFilePath != "ERROR" and os.path.isfile(outputFilePath):
+                        logMessage += (f"- **Ghidra Decompilation Result:** `Successfully decompile binary file {f'{filename} inside file {RootFileName}' if isArchive else filename} for LLM Assisted Static Analysis`\n"
+                                       f"- **Decompiled File Name:** `{os.path.basename(outputFilePath)}`\n")
+                        HashedDecompiledData = await checkingHashFromDisk(outputFilePath)
+                        CompiledHashedMap[HashedFileData] = HashedDecompiledData
+                        filepath = outputFilePath
+                        LLMScat = True
+                    else:
+                        logMessage += f"- **Ghidra Decompilation Result:** `Error decompiling binary file {f'{filename} inside file {RootFileName}' if isArchive else filename}`\n"
+                        unverifiedReasons += f"\n- **Decompilation Error For Binary File {f'{filename} inside file {RootFileName}' if isArchive else filename}:** `Cyberbot can not decompile the binary for further static analysis`"
+                elif fileExt in SUPPORTED_SCRIPT_FILE_FORMATS:
                     LLMScat = True
                 else:
-                    logMessage += f"- **Ghidra Decompilation Result:** `Error decompiling binary file {f'{filename} inside file {RootFileName}' if isArchive else filename}`\n"
-                    unverifiedReasons += f"\n- **Decompilation Error For Binary File {f'{filename} inside file {RootFileName}' if isArchive else filename}:** `Cyberbot can not decompile the binary for further static analysis`"
-            elif fileExt in SUPPORTED_SCRIPT_FILE_FORMATS:
-                LLMScat = True
-            else:
-                logMessage += (f"- **Scan Result:** `CLEAN`\n"
-                               f"- **Reason:** `File passed all VirusTotal scan engine analysis as clean!`\n")
+                    logMessage += (f"- **Scan Result:** `CLEAN`\n"
+                                   f"- **Reason:** `File passed all VirusTotal scan engine analysis as clean!`\n")
 
-            if LLMScat:
-                filename = os.path.basename(filepath)
-                HashedScriptFileData = await checkingHashFromDisk(filepath)
-                print(f"Found script file: {filename} | Type: {fileExt}")
-                """SCAT Process with OpenAI and Gemini LLMs"""
-                pdfPath = os.path.splitext(filepath)[0] + ".pdf"
-                async with aiofiles.open(filepath, "rb") as source:
-                    fileBytesContent = await source.read(500_000_001)
-                if len(fileBytesContent) > 500_000_000:
-                    pdfPath = None
-                else:
-                    print(f"Converting script file {filename} to PDF...")
-                    await asyncio.to_thread(txtToPDFConversion, fileBytesContent.decode("utf-8", errors="replace"), pdfPath)
-                    if not os.path.isfile(pdfPath):
-                        logMessage += f"- **PDF Conversion:** `The file {filename} was converted to PDF file {os.path.basename(pdfPath)}`\n"
+                if LLMScat:
+                    filename = os.path.basename(filepath)
+                    HashedScriptFileData = await checkingHashFromDisk(filepath)
+                    print(f"Found script file: {filename} | Type: {fileExt}")
+                    """SCAT Process with OpenAI and Gemini LLMs"""
+                    pdfPath = os.path.splitext(filepath)[0] + ".pdf"
+                    async with aiofiles.open(filepath, "rb") as source:
+                        fileBytesContent = await source.read(500_000_001)
+                    if len(fileBytesContent) > 500_000_000:
                         pdfPath = None
+                    else:
+                        print(f"Converting script file {filename} to PDF...")
+                        await asyncio.to_thread(txtToPDFConversion, fileBytesContent.decode("utf-8", errors="replace"), pdfPath)
+                        if not os.path.isfile(pdfPath):
+                            logMessage += f"- **PDF Conversion:** `The file {filename} was not successfully converted to PDF file {os.path.basename(pdfPath)}`\n"
+                            pdfPath = None
+                        else:
+                            logMessage += f"- **PDF Conversion:** `The file {filename} was successfully converted to PDF file {os.path.basename(pdfPath)}`\n"
 
-                flaggedMalicious = False
-                LLMModel = ""
-                LLMResult = ""
-                LLMVerified = False
+                    flaggedMalicious = False
+                    LLMModel = ""
+                    LLMResult = ""
+                    LLMVerified = False
 
-                '''
-                print(f"Start OpenAI Model {GPT_MODEL} scan on file {filename} for malware analysis...")
-                async with OPENAI_SEMAPHORE:
-                    GptScanResult, logMessage = await openAISCAT(pdfPath, logMessage) if pdfPath else "MAXIMUM INPUT TOKEN LIMIT"
-                if GptScanResult.startswith(("True", "true")):
-                    flaggedMalicious, LLMModel, LLMResult = True, GPT_MODEL, GptScanResult
-                elif GptScanResult.startswith(("False", "false")):
-                    LLMVerified = True
-                elif GptScanResult == "MAXIMUM INPUT TOKEN LIMIT":
+
+                    print(f"Start OpenAI Model {OPENAI_LLM_MODEL_FOR_SCAT} scan on file {filename} for malware analysis...")
                     async with OPENAI_SEMAPHORE:
-                        flaggedMalicious, GptScanResult, logMessage = await partialLLMSCAT(filepath, logMessage, "OpenAI")
-                    if flaggedMalicious:
-                        LLMModel, LLMResult = GPT_MODEL, GptScanResult
+                        GptScanResult, logMessage = await llmSCAT(OPENAI_LLM_MODEL_FOR_SCAT, pdfPath, logMessage) if pdfPath else await llmSCATOnText(OPENAI_LLM_MODEL_FOR_SCAT, filepath, logMessage)
+                    if GptScanResult.startswith(("True", "true")):
+                        flaggedMalicious, LLMModel, LLMResult = True, OPENAI_LLM_MODEL_FOR_SCAT, GptScanResult
                     elif GptScanResult == "Nothing Malicious":
                         LLMVerified = True
-                logMessage += "\n---\n\n"
-                '''
+                    logMessage += "\n---\n\n"
 
-                if not flaggedMalicious:
-                    print(f"Start Gemini Model {GEMINI_MODEL} scan on file {filename} for malware analysis...")
-                    async with GEMINI_SEMAPHORE:
-                        GeminiScanResult, logMessage = await GeminiSCAT(pdfPath, logMessage) if pdfPath else "MAXIMUM INPUT TOKEN LIMIT"
-                    if GeminiScanResult.startswith(("True", "true")):
-                        flaggedMalicious, LLMModel, LLMResult = True, GEMINI_MODEL, GeminiScanResult
-                    elif GeminiScanResult.startswith(("False", "false")):
-                        LLMVerified = True
-                    elif GeminiScanResult == "MAXIMUM INPUT TOKEN LIMIT":
+
+                    if not flaggedMalicious:
+                        print(f"Start Gemini Model {GEMINI_LLM_MODEL_FOR_SCAT} scan on file {filename} for malware analysis...")
                         async with GEMINI_SEMAPHORE:
-                            flaggedMalicious, GeminiScanResult, logMessage = await partialLLMSCAT(filepath, logMessage, "Gemini")
-                        if flaggedMalicious:
-                            LLMModel, LLMResult = GEMINI_MODEL, GeminiScanResult
-                        elif GeminiScanResult == "Nothing Malicious":
+                            GeminiScanResult, logMessage = await llmSCAT(GEMINI_LLM_MODEL_FOR_SCAT, pdfPath, logMessage) if pdfPath else await llmSCATOnText(GEMINI_LLM_MODEL_FOR_SCAT, filepath, logMessage)
+                        if GeminiScanResult.startswith(("True", "true")):
+                            flaggedMalicious, LLMModel, LLMResult = True, GEMINI_LLM_MODEL_FOR_SCAT, GeminiScanResult
+                        elif GptScanResult == "Nothing Malicious":
                             LLMVerified = True
 
-                if flaggedMalicious:
-                    logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
-                                   f"- **Reason:** `{LLMModel} Static Analysis on file content flagged malicious!`\n")
-                    if HashedScriptFileData != RootFileHashed:
-                        await addingHashedData(HashedScriptFileData, fileExt, True)
-                    await addingHashedData(RootFileHashed, RootFileTrueExt, True)
-                    for HashedData, mappedHash in CompiledHashedMap.items():
-                        if mappedHash == HashedScriptFileData and HashedData != RootFileHashed:
-                            await addingHashedData(HashedData, ".exe", True)
-                    return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"{LLMModel} analyzed {f'decompiled {filename} inside file {RootFileName}' if isArchive else filename} as potential malware!`\n- **LLM SCAT RESULT:**\n{LLMResult}", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
+                    if flaggedMalicious:
+                        logMessage += (f"- **Scan Result:** `MALICIOUS`\n"
+                                       f"- **Reason:** `{LLMModel} Static Analysis on file content flagged malicious!`\n")
+                        if HashedScriptFileData != RootFileHashed:
+                            await addingHashedData(HashedScriptFileData, fileExt, True)
+                        await addingHashedData(RootFileHashed, RootFileTrueExt, True)
+                        for HashedData, mappedHash in CompiledHashedMap.items():
+                            if mappedHash == HashedScriptFileData and HashedData != RootFileHashed:
+                                await addingHashedData(HashedData, ".exe", True)
+                        return FileScanResult(RootFileName, "malicious", CyberbotFileScanMessageFormat(f"{LLMModel} analyzed {f'decompiled {filename} inside file {RootFileName}' if isArchive else filename} as potential malware!`\n- **LLM SCAT RESULT:**\n{LLMResult}", "MALICIOUS", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
 
 
-                if LLMVerified:
-                    await addingHashedData(HashedScriptFileData, fileExt, False)
-                    for HashedData, mappedHash in CompiledHashedMap.items():
-                        if mappedHash == HashedScriptFileData and HashedData != RootFileHashed:
-                            await addingHashedData(HashedData, ".exe", False)
-                    logMessage += (f"- **Scan Result:** `CLEAN`\n"
-                                   f"- **Reason:** `File passed VirusTotal and LLM SCAT analysis as clean!`\n")
-                else:
-                    unverifiedReasons += f"\n- **LLM SCAT Analysis Of {f'Decompiled {filename} inside file {RootFileName}' if isArchive else filename}:** `LLM Static Analysis result as inconclusive`"
+                    if LLMVerified:
+                        await addingHashedData(HashedScriptFileData, fileExt, False)
+                        for HashedData, mappedHash in CompiledHashedMap.items():
+                            if mappedHash == HashedScriptFileData and HashedData != RootFileHashed:
+                                await addingHashedData(HashedData, ".exe", False)
+                        logMessage += (f"- **Scan Result:** `CLEAN`\n"
+                                       f"- **Reason:** `File passed VirusTotal and LLM SCAT analysis as clean!`\n")
+                    else:
+                        unverifiedReasons += f"\n- **LLM SCAT Analysis Of {f'Decompiled {filename} inside file {RootFileName}' if isArchive else filename}:** `LLM Static Analysis result as inconclusive`"
 
 
-            logMessage += "\n---\n\n"
+                logMessage += "\n---\n\n"
 
         if unverifiedReasons:
             return FileScanResult(RootFileName, "unverified", CyberbotFileScanMessageFormat(unverifiedReasons, "UNVERIFIED", RootFileName, RootFileTrueExt, f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
         await addingHashedData(RootFileHashed, RootFileTrueExt, False)
-        return FileScanResult(RootFileName, "clean",CyberbotFileScanMessageFormat(f"The file {RootFileName} is safe to download!", "CLEAN", RootFileName, RootFileTrueExt,f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
+        return FileScanResult(RootFileName, "clean", CyberbotFileScanMessageFormat(f"The file {RootFileName} is safe to download!", "CLEAN", RootFileName, RootFileTrueExt,f"{FullContentLength:,} bytes"), logMessage, RootFileHashed)
