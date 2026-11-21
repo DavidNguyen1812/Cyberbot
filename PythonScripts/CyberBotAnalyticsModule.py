@@ -109,25 +109,69 @@ async def writingLLMUsageCsv(csvPath: str, mode: Literal['w', 'a'], data: list, 
             await csvWriter.writerow(data)
 
 
-def calculateUsageCost(model: str, InputTokens: list, totalOutputTokens: int) -> float:
+async def calculateUsageCost(model: str, LLMResponse: Any) -> float:
     """
-    Description: Calculate the usage cost of the LLM model based on the total input tokens and output tokens.
+    Description: Calculate the usage cost of the LLM model based on the model response. If successful, the usage data is updated.
     :param model: LLM Model
-    :param InputTokens: The list of total input tokens [raw, cached read] of a prompt
-    :param totalOutputTokens: The total output tokens of a prompt
+    :param LLMResponse: The LLM response Object
+    :param webSearch: Whether or not if web search tool was called
     :return: The final calculated usage cost
     """
-    totalInputTokens = sum(InputTokens)
-    totalRawInputTokens =  InputTokens[0]
-    totalCachedReadTokens = InputTokens[1]
-    if "gemini" in model:
-        InputCostIndex = 1 if totalInputTokens > 200000 else 0
-        OutputCostIndex = 1 if totalOutputTokens > 200000 else 0
+    if model.startswith("gpt"):
+        if getattr(LLMResponse, "usage", None):
+            if getattr(LLMResponse.usage, "type", None): # Audio Transcribe Response
+                print(f"LLM Model {model} response usage type is not valid! Can't update LLM Usage data!")
+                return 0.0
+            else:
+                totalInputTokens = LLMResponse.usage.input_tokens
+                totalOutputTokens = LLMResponse.usage.output_tokens
+                inputTokenCostIndex = 1 if totalInputTokens > 272000 else 0
+                outputTokenCostIndex = 1 if totalOutputTokens > 272000 else 0
+
+                if getattr(LLMResponse.usage, "input_tokens_details", None):
+                    if getattr(LLMResponse.usage.input_tokens_details, "cached_tokens", None):
+                        totalCachedReadTokens = LLMResponse.usage.input_tokens_details.cached_tokens
+                    else:
+                        totalCachedReadTokens = 0
+                    if getattr(LLMResponse.usage.input_tokens_details, "cached_write_tokens", None):
+                        totalCachedWriteTokens = LLMResponse.usage.input_tokens_details.cached_write_tokens
+                    else:
+                        totalCachedWriteTokens = 0
+                else:
+                    totalCachedReadTokens = 0
+                    totalCachedWriteTokens = 0
+
+                totalRawInputTokens = totalInputTokens - (totalCachedReadTokens + totalCachedWriteTokens)
+
+                totalRawInputTokenCost = (totalRawInputTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Input Token"][inputTokenCostIndex]
+                totalCachedReadTokenCost = (totalCachedReadTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Cached Read"][inputTokenCostIndex]
+                totalCachedWriteTokenCost = (totalCachedWriteTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Cached Writes"][inputTokenCostIndex]
+                totalOutputTokenCost = (totalOutputTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Output Token"][outputTokenCostIndex]
+                totalCost = totalRawInputTokenCost + totalCachedReadTokenCost + totalCachedWriteTokenCost + totalOutputTokenCost
+                totalCost = round(totalCost, 5)
+                await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMMonthlyUsage.csv", "a", [f"{time.ctime(time.time()).split()[1]} {time.ctime(time.time()).split()[2]}", totalInputTokens, totalOutputTokens, model, totalCost], MonthlyCSVLock)
+                await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMYearlyUsage.csv", "a", [f"{time.ctime(time.time()).split()[1]} {time.ctime(time.time()).split()[2]}", totalInputTokens, totalOutputTokens, model, totalCost], YearlyCSVLock)
+                return totalCost
+        else:
+            print(f"LLM Model {model} response has no usage attribute! Can't update LLM Usage data!")
+            return 0.0
     else:
-        InputCostIndex = 0
-        OutputCostIndex = 0
-    totalRawInputCost = (totalRawInputTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Input Token"][InputCostIndex]
-    totalCachedReadCost = (totalCachedReadTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Cached Read"][InputCostIndex]
-    totalOutputTokens = (totalOutputTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Output Token"][OutputCostIndex]
-    totalCost = round(totalRawInputCost + totalCachedReadCost + totalOutputTokens, 5)
-    return totalCost
+        if getattr(LLMResponse, "usage", None):
+            totalInputTokens = LLMResponse.usage.total_input_tokens
+            totalOutputTokens = LLMResponse.usage.total_output_tokens
+            if getattr(LLMResponse.usage, "total_cached_tokens", None):
+                totalCachedReadTokens = LLMResponse.usage.total_cached_tokens
+            else:
+                totalCachedReadTokens = 0
+            totalRawInputTokens = totalInputTokens - totalCachedReadTokens
+            totalRawInputTokenCost = (totalRawInputTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Input Token"][0]
+            totalCachedReadTokenCost = (totalCachedReadTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Cached Read"][0]
+            totalOutputTokenCost = (totalOutputTokens / 1000000) * LLM_MODEL_INFORMATION[model]["Cost"]["Output Token"][0]
+            totalCost = totalRawInputTokenCost + totalCachedReadTokenCost + totalOutputTokenCost
+            totalCost = round(totalCost, 5)
+            await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMMonthlyUsage.csv", "a", [f"{time.ctime(time.time()).split()[1]} {time.ctime(time.time()).split()[2]}", totalInputTokens, totalOutputTokens, model, totalCost], MonthlyCSVLock)
+            await writingLLMUsageCsv(f"{LLM_USAGE_LOG}LLMYearlyUsage.csv", "a", [f"{time.ctime(time.time()).split()[1]} {time.ctime(time.time()).split()[2]}", totalInputTokens, totalOutputTokens, model, totalCost], YearlyCSVLock)
+            return totalCost
+        else:
+            print(f"LLM Model {model} response has no usage attribute! Can't update LLM Usage data!")
+            return 0.0
