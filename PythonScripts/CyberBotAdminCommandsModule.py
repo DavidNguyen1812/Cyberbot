@@ -784,7 +784,7 @@ async def cyberbot_config(ctx, configuration: Literal["Automation-Mode", "Silent
 async def viewing_cyberbot_configuration(ctx):
     print(f"User {ctx.user.name} initiated /viewing_cyberbot_configuration command")
     await ctx.response.defer(ephemeral=True)
-    adminAccount = CyberBotConfigData["Admins"].get(str(ctx.guild.id), {})
+    adminAccount = CyberBotConfigData["Admins"].get(str(ctx.user.id), None)
     if adminAccount:
         if ctx.guild.id in adminAccount["Accessible Servers"] or ctx.user.id == ctx.guild.owner.id:
             if str(ctx.guild.id) in adminAccount["Current Admin Session Period"]:
@@ -850,7 +850,7 @@ async def viewing_cyberbot_configuration(ctx):
 async def non_monitoring_channel(ctx, action: Literal["ADD", "REMOVE"]):
     print(f"User {ctx.user.name} initiated /non_monitoring_channel command")
     await ctx.response.defer(ephemeral=True)
-    adminAccount = CyberBotConfigData["Admins"].get(str(ctx.guild.id), {})
+    adminAccount = CyberBotConfigData["Admins"].get(str(ctx.user.id), None)
     if adminAccount:
         if ctx.guild.id in adminAccount["Accessible Servers"] or ctx.user.id == ctx.guild.owner.id:
             if str(ctx.guild.id) in adminAccount["Current Admin Session Period"]:
