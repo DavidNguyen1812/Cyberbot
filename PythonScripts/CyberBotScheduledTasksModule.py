@@ -3,6 +3,16 @@ from __future__ import annotations
 from CyberBotRuntimeModule import *
 from CyberBotAnalyticsModule import plotBarCharts, plotModelCalls, writingLLMUsageCsv
 
+"""Getting Current Time Value"""
+ct = time.ctime(time.time()).split()
+previousMonth = ct[1]
+previousDate = ct[2]
+previousYear = ct[4]
+if not os.path.exists(f"{LLM_USAGE_LOG}{previousYear}"):
+    os.mkdir(f"{LLM_USAGE_LOG}{previousYear}")
+if not os.path.exists(f"{LLM_USAGE_LOG}{previousYear}/{previousMonth}"):
+    os.mkdir(f"{LLM_USAGE_LOG}{previousYear}/{previousMonth}")
+    
 async def CronTaskLog(logData: str) -> None:
     """
     Description: Logging Cyberbot Cron Task Job Results
@@ -21,77 +31,92 @@ async def checking_expired_tokens():
             async with aiofiles.open(ONE_TIME_TOKEN_PATH, "r") as file:
                 resetTokens = json.loads(await file.read())
 
-    try:
-        logMessage = f"# {time.ctime(time.time())}\n\n---\n\n"
-        pending_delete_tokens = []
+    logMessage = f"# {time.ctime(time.time())}\n\n---\n\n"
+    ExpiredPasswords = False
+    ExpiredEmailTokens = False
+    ExpiredAdminDeleteTokens = False
+    ExpiredAdminDeleteCooldowns = False
+    pending_delete_tokens = []
 
-        logMessage += f"## Detected Expired One Time Password Reset Token\n"
-        for tokenID in resetTokens["Password Reset Token"]:
-            if time.time() >= resetTokens["Password Reset Token"][tokenID][1]:
-                print(f"One Time Password Reset Token {resetTokens["Password Reset Token"][tokenID][0]} for {tokenID} expired.")
-                logMessage += f"- One Time Password Reset Token `{resetTokens["Password Reset Token"][tokenID][0]}` for `{tokenID}` expired.\n"
-                pending_delete_tokens.append(tokenID)
+    for tokenID in resetTokens["Password Reset Token"]:
+        if time.time() >= resetTokens["Password Reset Token"][tokenID][1]:
+            print(f"One Time Password Reset Token {resetTokens["Password Reset Token"][tokenID][0]} for {tokenID} expired.")
+            if not ExpiredPasswords:
+                logMessage += f"## Detected Expired One Time Password Reset Token\n"
+                ExpiredPasswords = True
+            logMessage += f"- One Time Password Reset Token `{resetTokens["Password Reset Token"][tokenID][0]}` for `{tokenID}` expired.\n"
+            pending_delete_tokens.append(tokenID)
 
-        logMessage += f"## Detected Expired Email Confirmation Token\n"
-        for tokenID in resetTokens["Email Confirmation Token"]:
-            if time.time() >= resetTokens["Email Confirmation Token"][tokenID][1]:
-                print(f"Email Confirmation Token {resetTokens["Email Confirmation Token"][tokenID][0]} for {tokenID} expired.")
-                logMessage += f"- Email Confirmation Token `{resetTokens["Email Confirmation Token"][tokenID][0]}` for `{tokenID}` expired.\n"
-                pending_delete_tokens.append(tokenID)
+    for tokenID in resetTokens["Email Confirmation Token"]:
+        if time.time() >= resetTokens["Email Confirmation Token"][tokenID][1]:
+            print(f"Email Confirmation Token {resetTokens["Email Confirmation Token"][tokenID][0]} for {tokenID} expired.")
+            if not ExpiredEmailTokens:
+                logMessage += f"## Detected Expired Email Confirmation Token\n"
+                ExpiredEmailTokens = True
+            logMessage += f"- Email Confirmation Token `{resetTokens["Email Confirmation Token"][tokenID][0]}` for `{tokenID}` expired.\n"
+            pending_delete_tokens.append(tokenID)
 
-        logMessage += f"## Detected Expired Admin Account Delete Confirmation Token\n"
-        for tokenID in resetTokens["Account Delete Confirmation Token"]:
-            if time.time() >= resetTokens["Account Delete Confirmation Token"][tokenID][1]:
-                print(f"Admin Account Delete Confirmation Token {resetTokens["Account Delete Confirmation Token"][tokenID][0]} for {tokenID} expired.")
-                logMessage += f"- Admin Account Delete Confirmation Token `{resetTokens["Account Delete Confirmation Token"][tokenID][0]}` for `{tokenID}` expired.\n"
-                pending_delete_tokens.append(tokenID)
+    for tokenID in resetTokens["Account Delete Confirmation Token"]:
+        if time.time() >= resetTokens["Account Delete Confirmation Token"][tokenID][1]:
+            print(f"Admin Account Delete Confirmation Token {resetTokens["Account Delete Confirmation Token"][tokenID][0]} for {tokenID} expired.")
+            if not ExpiredAdminDeleteTokens:
+                logMessage += f"## Detected Expired Admin Account Delete Confirmation Token\n"
+                ExpiredAdminDeleteTokens = True
+            logMessage += f"- Admin Account Delete Confirmation Token `{resetTokens["Account Delete Confirmation Token"][tokenID][0]}` for `{tokenID}` expired.\n"
+            pending_delete_tokens.append(tokenID)
 
-        logMessage += f"## Detected Admin Account Delete Cooldown\n"
-        for userID in resetTokens["Recently Delete Admin Account"]:
-            if time.time() >= resetTokens["Recently Delete Admin Account"][userID][0]:
-                print(f"Admin Account Delete Cooldown for Discord User ID {userID}")
-                logMessage += f"- Admin Account Delete Cooldown for Discord User ID `{userID}` expired.\n"
-                pending_delete_tokens.append(userID)
+    for userID in resetTokens["Recently Delete Admin Account"]:
+        if time.time() >= resetTokens["Recently Delete Admin Account"][userID][0]:
+            print(f"Admin Account Delete Cooldown for Discord User ID {userID} expired.")
+            if not ExpiredAdminDeleteCooldowns:
+                logMessage += f"## Detected Admin Account Delete Cooldown\n"
+                ExpiredAdminDeleteCooldowns = True
+            logMessage += f"- Admin Account Delete Cooldown for Discord User ID `{userID}` expired.\n"
+            pending_delete_tokens.append(userID)
 
+    if pending_delete_tokens:
         logMessage += f"## Deleting All Expired One Time Tokens\n"
-        for tokenID in pending_delete_tokens:
-            print(f"Removing one time token associated with {tokenID}...")
-            try:
-                if resetTokens["Password Reset Token"].get(tokenID):
-                    del resetTokens["Password Reset Token"][tokenID]
-                    logMessage += f"\t+ Password Reset Token for `{tokenID}` was removed and invalidated!\n"
-            except Exception as e:
-                logMessage += (f"\t+ Error Removing Password Reset Token for `{tokenID}`\n"
-                               f"\t+ Error `{e}`\n")
-                print(f"Encounter Error: {e}")
-            try:
-                if resetTokens["Email Confirmation Token"].get(tokenID):
-                    logMessage += f"\t+ Email Confirmation Token for `{tokenID}` was removed and invalidated!\n"
-                    del resetTokens["Email Confirmation Token"][tokenID]
-                print(f"Removal Success!!!")
-            except Exception as e:
-                logMessage += (f"\t+ Error Removing Email Confirmation Token for `{tokenID}`\n"
-                               f"\t+ Error `{e}`\n")
-                print(f"Encounter Error: {e}")
-            try:
-                if resetTokens["Account Delete Confirmation Token"].get(tokenID):
-                    del resetTokens["Admin Account Delete Confirmation Token"][tokenID]
-                    logMessage += f"\t+ Admin Account Delete Confirmation Token for `{tokenID}` was removed and invalidated!\n"
-            except Exception as e:
-                logMessage += (f"\t+ Error Removing Admin Account Delete Confirmation Token for `{tokenID}`\n"
-                               f"\t+ Error `{e}`\n")
-                print(f"Encounter Error: {e}")
-            async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
-                await file.write(json.dumps(resetTokens, indent=4))
-        logMessage += "\n---\n\n"
-        if pending_delete_tokens:
-            print("\n\n")
-            await CronTaskLog(logMessage)
-    finally:
-        # Free content in RAM
-        pending_delete_tokens = None
-        logMessage = None
-        resetTokens = None
+    for tokenID in pending_delete_tokens:
+        print(f"Removing one time token associated with {tokenID}...")
+        try:
+            if resetTokens["Password Reset Token"].get(tokenID):
+                del resetTokens["Password Reset Token"][tokenID]
+                logMessage += f"\t+ Password Reset Token for `{tokenID}` was removed and invalidated!\n"
+        except Exception as e:
+            logMessage += (f"\t+ Error Removing Password Reset Token for `{tokenID}`\n"
+                           f"\t+ Error `{e}`\n")
+            print(f"Encounter Error: {e}")
+        try:
+            if resetTokens["Email Confirmation Token"].get(tokenID):
+                logMessage += f"\t+ Email Confirmation Token for `{tokenID}` was removed and invalidated!\n"
+                del resetTokens["Email Confirmation Token"][tokenID]
+        except Exception as e:
+            logMessage += (f"\t+ Error Removing Email Confirmation Token for `{tokenID}`\n"
+                           f"\t+ Error `{e}`\n")
+            print(f"Encounter Error: {e}")
+        try:
+            if resetTokens["Account Delete Confirmation Token"].get(tokenID):
+                del resetTokens["Admin Account Delete Confirmation Token"][tokenID]
+                logMessage += f"\t+ Admin Account Delete Confirmation Token for `{tokenID}` was removed and invalidated!\n"
+        except Exception as e:
+            logMessage += (f"\t+ Error Removing Admin Account Delete Confirmation Token for `{tokenID}`\n"
+                           f"\t+ Error `{e}`\n")
+            print(f"Encounter Error: {e}")
+        try:
+            if resetTokens["Recently Delete Admin Account"].get(tokenID):
+                del resetTokens["Recently Delete Admin Account"][tokenID]
+                logMessage += f"\t+ Admin Delete Cooldown for `{tokenID}` was removed and invalidated!\n"
+        except Exception as e:
+            logMessage += (f"\t+ Error Removing Admin Delete Cooldown for `{tokenID}`\n"
+                           f"\t+ Error `{e}`\n")
+            print(f"Encounter Error: {e}")
+        print(f"Removal Success!!!")
+    async with aiofiles.open(ONE_TIME_TOKEN_PATH, "w") as file:
+        await file.write(json.dumps(resetTokens, indent=4))
+    logMessage += "\n---\n\n"
+    if pending_delete_tokens:
+        print("\n\n")
+        await CronTaskLog(logMessage)
 
 
 @tasks.loop(seconds=15)  # A task every 15 seconds
@@ -126,33 +151,34 @@ async def checking_member_can_kick_cyberbot():
                 finally:
                     print("\n\n")
                     await CronTaskLog(logMessage)
-                    logMessage = None
 
 
 @tasks.loop(time=datetime.time(hour=0, minute=0, tzinfo=ZoneInfo("America/New_York")))  # A task every new day
 async def daily_check_for_expired_credential_and_update_llm_usages():
     global previousYear, previousMonth, previousDate
 
-    logMessage = f"# {time.ctime(time.time())}\n\n---\n\n"
     print("Checking for expired password...")
-    log = False
+    ExpiredPasswords = False
+    logMessage = ""
     for account in CyberBotConfigData["Admins"]:
         if time.time() >= account["Credential Expiration Age"]:
-            log = True
+            if not ExpiredPasswords:
+                logMessage = (f"# {time.ctime(time.time())}\n\n---\n\n"
+                              f"## Detected Expired Admin Account Password\n")
+                ExpiredPasswords = True
             print(f"Password for {account['User Email']} expired.")
-            logMessage += ("## Detected Expired Admin Account Password\n"
-                           f"- The Password for Admin Account Associated with the email `{account['User Email']}` Is EXPIRED!\n")
+            logMessage += f"- The Password for Admin Account Associated with the email `{account['User Email']}` Is EXPIRED!\n"
             try:
                 user = Cyberbot.get_user(account["User ID"])
                 await user.send(f"Your current admin account password has `EXPIRED`\nPlease use command **/request_password_reset_token** and **/change_password** to update your password!")
-                logMessage += f"Password expire notification WAS SENT to user {user.name} - ID {user.id} via DM channel\n\n---\n\n"
+                logMessage += f"- Password expire notification WAS SENT to user {user.name} - ID {user.id} via DM channel\n\n---\n\n"
                 print(f"Password expire notification sent to {user.name} - ID {user.id} via DM channel!")
             except Exception as e:
                 print(f"Error sending expire notification to user DM channel: {e}")
                 logMessage += (f"Error: {e}\n"
-                               f"Password expire notification CAN NOT BE SENT the user via DM channel\n\n---\n\n")
+                               f"- Password expire notification CAN NOT BE SENT the user via DM channel\n\n---\n\n")
     print("Process Finished!\n\n")
-    if log:
+    if ExpiredPasswords:
         await CronTaskLog(logMessage)
     currentTime = time.ctime(time.time()).split()
 
