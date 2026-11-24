@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-
 from CyberBotRuntimeModule import *
 from CyberBotScanOrchestrationModule import CyberBotScan
 from CyberBotScheduledTasksModule import checking_expired_tokens, checking_member_can_kick_cyberbot, daily_check_for_expired_credential_and_update_llm_usages, reset_current_failed_log_in_attempts
-
+from CyberBotSecurityUtilitiesModule import sendEmail
 
 @Cyberbot.event
 async def on_ready():
@@ -28,20 +27,31 @@ async def on_ready():
 
 @Cyberbot.event
 async def on_member_remove(member):
-    print(f"Member {member.name} left server {member.guild.name} ID {member.guild.id}\nRemoving member admin access and session from the server...\n\n")
-    for admin in CyberBotConfigData["Admins"]:
-        if admin["User ID"] == member.id:
-            admin["Accessible Servers"].remove(member.guild.id)
-            if str(member.guild.id) in admin["Current Admin Session Period"]:
-                del admin["Current Admin Session Period"][str(member.guild.id)]
+    adminAccount = CyberBotConfigData["Admins"].get(str(member.id), None)
+    if adminAccount:
+        if member.guild.id in adminAccount["Accessible Servers"]:
+            print(f"Member {member.name} left server {member.guild.name} ID {member.guild.id}\nRemoving member admin access and session from the server...")
+            adminAccount["Accessible Servers"].remove(member.guild.id)
+            if str(member.guild.id) in adminAccount["Current Admin Session Period"]:
+                del adminAccount["Current Admin Session Period"][str(member.guild.id)]
             async with ConfigLock:
                 async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
                     await file.write(json.dumps(CyberBotConfigData, indent=4))
-            try:
-                await member.send( f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you have left the server!")
-            except Exception as error:
-                print(f"Error sending DM to user: {error}")
-            break
+            tryDM = False
+            userEmail = adminAccount.get("Notification Email", None)
+            if userEmail:
+                if await asyncio.to_thread(sendEmail, f"Admin Account Access Revoke:Left Server:{member.guild.name}:{member.guild.id}", userEmail, member.name) != "Email sent successfully!":
+                    tryDM = True
+                else:
+                    print("Admin Access Revoked Notification sent via account email!")
+            else:
+                tryDM = True
+            if tryDM:
+                try:
+                    await member.send( f"Your admin access to server {member.guild.name} ID {member.guild.id} has been removed.\nThe reason was that you no longer a member of the server!")
+                    print("Admin Access Revoked Notification sent via DM channel!")
+                except Exception as error:
+                    print(f"Error sending DM to user: {error}")
 
 
 @Cyberbot.tree.command(
