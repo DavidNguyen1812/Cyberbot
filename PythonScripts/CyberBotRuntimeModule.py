@@ -193,15 +193,6 @@ GHIDRA_SEMAPHORE = asyncio.Semaphore(1) # Maximum 1 ghidra decompilation process
 GEMINI_SEMAPHORE = asyncio.Semaphore(10) # Maximum 10 concurrent Gemini API call at any given time
 OPENAI_SEMAPHORE = asyncio.Semaphore(10) # Maximum 10 concurrent OpenAI API call at any given time
 
-"""Getting Current Time Value"""
-ct = time.ctime(time.time()).split()
-previousMonth = ct[1]
-previousDate = ct[2]
-previousYear = ct[4]
-if not os.path.exists(f"{LLM_USAGE_LOG}{previousYear}"):
-    os.mkdir(f"{LLM_USAGE_LOG}{previousYear}")
-if not os.path.exists(f"{LLM_USAGE_LOG}{previousYear}/{previousMonth}"):
-    os.mkdir(f"{LLM_USAGE_LOG}{previousYear}/{previousMonth}")
 
 """Ghidra Configuration"""
 GHIDRA_TEMP_PROJECTS = str(ROOT_DIR / "CyberbotGhidraProject/")
