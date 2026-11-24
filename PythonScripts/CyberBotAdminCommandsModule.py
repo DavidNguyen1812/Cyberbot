@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from CyberBotRuntimeModule import *
 from CyberBotSecurityUtilitiesModule import CheckPasswordPwned, LoggingApplicationCommand, randomPasswordGenerator, sendEmail
 
@@ -209,14 +211,23 @@ async def remove_admin_account(ctx, account_email: str, account_password: str):
                         adminAccount["Locked Out History"].append(time.ctime(time.time()))
                         adminAccount["Current Account Locked Out Period"] = time.time() + 10800
                         adminAccount["Total Locked Out"] = len(adminAccount["Locked Out History"])
+                        userEmail = adminAccount.get("Notification Email", None)
                         adminAccount["Current Admin Session Period"] = {}
-                        try:
-                            await ctx.user.send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /remove_admin_account.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
-                        except Exception:
-                            pass
+                        tryDM = False
+                        if userEmail:
+                            if await asyncio.to_thread(sendEmail, "Admin Account Locked Down:/remove_admin_account", userEmail, ctx.user.name,otp_expiry=len(adminAccount['Locked Out History'])) != "Email sent successfully!":
+                                tryDM = True
+                        else:
+                            tryDM = True
+                        if tryDM:
+                            try:
+                                await ctx.user.send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /remove_admin_account.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
+                            except Exception:
+                                pass
                         await ctx.followup.send("Too many failed authentication attempts! Your admin account has been locked for 3 hours!")
                         print(f"User {ctx.user.name} input too many invalid authentication attempts, initiating admin account lock out!\n\n")
                         await LoggingApplicationCommand(ctx, "/remove_admin_account", "account_email -> REDACT, password -> REDACT", "Denied/Too Many Bad Credentials Attempts and account has been locked!")
+                        userEmail = None
                 async with ConfigLock:
                     async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
                         await file.write(json.dumps(CyberBotConfigData, indent=4))
@@ -256,7 +267,7 @@ async def confirm_delete_admin_account(ctx, account_email: str, otp: str):
                 tokenExpiry = resetTokens["Account Delete Confirmation Token"][emailSHA512Hash][1]
                 del resetTokens["Account Delete Confirmation Token"][emailSHA512Hash]
                 if time.time() < tokenExpiry:
-                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", account_email, ctx.user.name) != "Email sent unsuccessfully!":
+                    if await asyncio.to_thread(sendEmail, "Admin Account Unregistration Confirmation", account_email, ctx.user.name) == "Email sent successfully!":
                         del CyberBotConfigData["Admins"][str(ctx.user.id)]
                         resetTokens["Recently Delete Admin Account"][str(ctx.user.id)] = [time.time() + ADMIN_ACCOUNT_DELETE_COOLDOWN]
                         async with ConfigLock:
@@ -672,13 +683,22 @@ async def admin_log_in(ctx, account_email: str, account_password: str):
                         adminAccount["Current Account Locked Out Period"] = time.time() + 10800
                         adminAccount["Total Locked Out"] = len(adminAccount["Locked Out History"])
                         adminAccount["Current Admin Session Period"] = {}
-                        try:
-                            await ctx.user.send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /admin_log_in.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
-                        except Exception:
-                            pass
+                        userEmail = adminAccount.get("Notification Email", None)
+                        tryDM = False
+                        if userEmail:
+                            if await asyncio.to_thread(sendEmail, "Admin Account Locked Down:/admin_log_in", userEmail, ctx.user.name, otp_expiry=len(adminAccount['Locked Out History'])) != "Email sent successfully!":
+                                tryDM = True
+                        else:
+                            tryDM = True
+                        if tryDM:
+                            try:
+                                await ctx.user.send(f"You received this DM from Cyberbot to notify that your admin account has been locked for 3 hours due too many invalid authentication attempts while using command /admin_log_in.\nThe current total lock outs associated with your account is: {len(adminAccount['Locked Out History'])}\nAll valid admin sessions are terminated!")
+                            except Exception:
+                                pass
                         await ctx.followup.send("Too many failed login attempts! Your admin account has been locked for 3 hours!")
                         print(f"User {ctx.user.name} input too many invalid log in attempts, initiating admin account lock out!\n\n")
                         await LoggingApplicationCommand(ctx, f"/admin_log_in", f"account_email -> REDACT, account_password -> REDACT", "Denied/Too Many Bad Credentials and account has been locked!")
+                        userEmail = None
                 async with ConfigLock:
                     async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
                         await file.write(json.dumps(CyberBotConfigData, indent=4))
@@ -725,6 +745,90 @@ async def admin_log_out(ctx):
         await ctx.followup.send("You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
         print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
         await LoggingApplicationCommand(ctx, f"/admin_log_out", "NONE", "Denied/User does not have a Cyberbot admin account yet!")
+
+
+# Command for Admins and in non-DM with Cyberbot ONLY!
+@Cyberbot.tree.command(
+    name="enable_email_notification",
+    description="Enable Cyberbot automation email notification"
+)
+@app_commands.describe(
+    account_email="Please provide a valid email address associated with your admin account"
+)
+async def enable_email_notification(ctx, account_email: str):
+    print(f"User {ctx.user.name} initiated /enable_email_notification command")
+    await ctx.response.defer(ephemeral=True)
+    adminAccount = CyberBotConfigData["Admins"].get(str(ctx.user.id), None)
+    emailSHA512hash = hashlib.sha512(account_email.encode()).hexdigest()
+    if adminAccount:
+        if adminAccount.get("Notification Email", None):
+            await ctx.followup.send("You already enabled email notification feature!")
+            print(f"{ctx.user.name} already enabled email notification feature!\n\n")
+            await LoggingApplicationCommand(ctx, f"/enable_email_notification", " account_email -> REDACT","Denied/User already enabled email notification feature!")
+        else:
+            if emailSHA512hash == adminAccount["User Email"]:
+                if await asyncio.to_thread(sendEmail, "Cyberbot Email Notification Enable", account_email, ctx.user.name) == "Email sent successfully!":
+                    adminAccount["Notification Email"] = account_email
+                    await ctx.followup.send(f"Please check your email {account_email}")
+                    print(f"Email notification feature has been enabled for admin account {ctx.user.id}")
+                    await LoggingApplicationCommand(ctx, f"/enable_email_notification", " account_email -> REDACT",f"Approved/Email notification feature has been enabled for admin account {ctx.user.id}")
+                    async with ConfigLock:
+                        async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
+                            await file.write(json.dumps(CyberBotConfigData, indent=4))
+                else:
+                    await ctx.followup.send("Cyberbot can not send email notification information to you! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
+                    print(f"Can not send email!")
+                    await LoggingApplicationCommand(ctx, f"/enable_email_notification", " account_email -> REDACT", f"Denied/Can not send email!")
+            else:
+                await ctx.followup.send("Your provided email address does not match the hash of your registered email address!")
+                print(f"{ctx.user.name} provided invalid email address!\n\n")
+                await LoggingApplicationCommand(ctx, f"/enable_email_notification", " account_email -> REDACT","Denied/User provide invalid email address!")
+    else:
+        await ctx.followup.send("You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+        print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
+        await LoggingApplicationCommand(ctx, f"/enable_email_notification", " account_email -> REDACT","Denied/User does not have a Cyberbot admin account yet!")
+
+
+# Command for Admins and in non-DM with Cyberbot ONLY!
+@Cyberbot.tree.command(
+    name="disable_email_notification",
+    description="Disable Cyberbot automation email notification"
+)
+@app_commands.describe(
+    account_email="Please provide a valid email address associated with your admin account"
+)
+async def disable_email_notification(ctx, account_email: str):
+    print(f"User {ctx.user.name} initiated /disable_email_notification command")
+    await ctx.response.defer(ephemeral=True)
+    adminAccount = CyberBotConfigData["Admins"].get(str(ctx.user.id), None)
+    emailSHA512hash = hashlib.sha512(account_email.encode()).hexdigest()
+    if adminAccount:
+        if adminAccount.get("Notification Email", None):
+            if emailSHA512hash == adminAccount["User Email"]:
+                if await asyncio.to_thread(sendEmail, "Cyberbot Email Notification Disable", account_email, ctx.user.name) == "Email sent successfully!":
+                    del adminAccount["Notification Email"]
+                    await ctx.followup.send(f"Please check your email {account_email}")
+                    print(f"Email notification feature has been disabled for admin account {ctx.user.id}")
+                    await LoggingApplicationCommand(ctx, f"/disable_email_notification", " account_email -> REDACT",f"Approved/Email notification feature has been disabled for admin account {ctx.user.id}")
+                    async with ConfigLock:
+                        async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
+                            await file.write(json.dumps(CyberBotConfigData, indent=4))
+                else:
+                    await ctx.followup.send("Cyberbot can not send email notification disable information to you! Please try the command again and ensure that you have not blocked Cyberbot automation email noreplycyberbot7777@gmail.com!")
+                    print(f"Can not send email!")
+                    await LoggingApplicationCommand(ctx, f"/disable_email_notification", " account_email -> REDACT", f"Denied/Can not send email!")
+            else:
+                await ctx.followup.send("Your provided email address does not match the hash of your registered email address!")
+                print(f"{ctx.user.name} provided invalid email address!\n\n")
+                await LoggingApplicationCommand(ctx, f"/disable_email_notification", " account_email -> REDACT","Denied/User provide invalid email address!")
+        else:
+            await ctx.followup.send("You already disabled email notification feature!")
+            print(f"{ctx.user.name} already disabled email notification feature!\n\n")
+            await LoggingApplicationCommand(ctx, f"/disable_email_notification", " account_email -> REDACT","Denied/User already disabled email notification feature!")
+    else:
+        await ctx.followup.send("You do not have a Cyberbot admin account yet! Use command /create_admin_account to register a new Cyberbot admin account!")
+        print(f"{ctx.user.name} does not have a Cyberbot admin account!\n\n")
+        await LoggingApplicationCommand(ctx, f"/disable_email_notification", " account_email -> REDACT","Denied/User does not have a Cyberbot admin account yet!")
 
 
 # Command for Admins and in non-DM with Cyberbot ONLY!
