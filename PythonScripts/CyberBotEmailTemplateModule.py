@@ -37,49 +37,77 @@ def buildCyberbotHTMLEmail(subject: str, user_discord_name: str, logoCID: str = 
         note = (f"This token code will expire in <strong>{otp_expiry // 60} minutes</strong>.\n"
                 f"Next step: Please provide the code with Cyberbot command <strong>/confirm_admin_account_creation</strong>")
         advisory = "If you did not request this code, you can safely ignore this message."
+
     elif subject == "New Cyberbot Admin Account Created":
         description = "Your CyberBot admin account has been created. Your temporary password is:"
         secret = otp
         note = "To change your password, use <strong>/request_password_reset_token</strong> followed by <strong>/change_password</strong> in Discord."
         advisory = f"For your security, this password will expire in {otp_expiry // 60} minutes. Please change this temporary password as soon as possible. Never share it with anyone."
+
     elif subject == "Cyberbot Password Reset Token":
         description = "Use this one-time token to set a new password for your Cyberbot admin account."
         secret = otp
         note = (f"This token code will expire in <strong>{otp_expiry // 60} minutes</strong>.\n"
                 f"Next step: Please provide the code with Cyberbot command <strong>/change_password</strong>")
         advisory = "If you did not request a password reset, you can safely ignore this message."
+
     elif subject == "Admin Account Delete Confirmation Token":
         description = "Use this one-time token to verify your CyberBot Admin Account Deletion."
         secret = otp
         note = (f"This token code will expire in <strong>{otp_expiry // 60} minutes</strong>.\n"
                 f"Next step: Please provide the code with Cyberbot command <strong>/confirm_delete_admin_account</strong>")
         advisory = "If you did not request a password reset, you can safely ignore this message."
+
     elif subject == "Admin Account Unregistration Confirmation":
         # CHANGED: Remove the trailing comma so description is a string, not a tuple.
         description = "You have requested an unregistration process of your Cyberbot admin account and your request has been approved!"
         note = ("All data associated with the account are permanently deleted!\n"
                 "IMPORTANT NOTE: You can re-register a Cyberbot Admin Account again in 7 hours!\n")
+
     elif subject == "Security Notice: Attempt Admin Account Creation":
         description = "Someone is trying to register another Cyberbot Admin Account under this email address, but Cyberbot has prevented the account creation and hide the information that an admin account already exist with this email address."
         advisory = "If you keep on receiving this email, please report to Cyberbot security team!" # You can set up another email to handle security ticket, if you wish!
+
     elif subject == "Cyberbot Email Notification Enable":
         description = "You received this email as a confirmation that Cyberbot Automation Email feature is ENABLED for your Cyberbot Admin account!"
         note = (f"<strong>Cyberbot will send email notification when:</strong>\n"
-                f"- Your Admin Account Password Expired!\n"
-                f"- Your Admin Account Locked Due To Too Many Failed Authentication Attempts!\n"
-                f"NOTE: If you want to disable Email Notification Feature, you can turn it off with command <strong>/confirm_delete_admin_account</strong>\n")
+                f"1. Your Admin Account Password Expired!\n"
+                f"2. Your Admin Account Locked Due To Too Many Failed Authentication Attempts!\n"
+                f"3. A Server Owner of a Server That You a Member Of <strong>GRANTED</strong> or <strong>REVOKED</strong> your Cyberbot Admin Account privilege in the Server!\n"
+                f"NOTE: If you want to disable Email Notification Feature, you can turn it off with command <strong>/disable_email_notification</strong>\n")
         advisory = "Please be advised that with Email Notification Feature enabled, your email address will be stored as plain text within Cyberbot admin account database!"
+
     elif subject == "Cyberbot Email Notification Disable":
         description = "You received this email as a confirmation that Cyberbot Automation Email feature is DISABLED for your Cyberbot Admin account! Your email address will no longer be stored as plain text within Cyberbot admin account database, and you will not receive any future email notification from Cyberbot!"
+
     elif subject.startswith("Admin Account Locked Down"):
         heading, command = subject.split(":")
         subject = heading
         description = f"You received this email to notify that your Cyberbot Admin Account has been locked down for 3 hours due to too many failed authentication attempts with command '{command}'"
         note = (f"The current total lock outs associated with your account is: <strong>{otp_expiry}</strong>\n"
                 f"All valid admin sessions across Discord servers are terminated!\n")
+
     elif subject == "Cyberbot Admin Account Password Expired":
         description = f"You received this email to notify that your Cyberbot Admin Password has been EXPIRED!"
         note = f"Next step: Please update your password with Cyberbot command <strong>/request_password_reset_token</strong> and <strong>/change_password</strong>"
+
+    elif subject.startswith("Admin Account Access Revoke"):
+        heading, reason, serverName, serverID = subject.split(":")
+        subject = heading
+        if reason == "Left Server":
+            description = f"You received this email to notify that your Cyberbot Admin Account Access To The Following Discord Server has been Revoked. The reason was you no longer a member in the server!"
+        else:
+            description = f"You received this email to notify that your Cyberbot Admin Account Access To The Following Discord Server has been Revoked by the Server Owner!"
+        note = (f"Discord Server Name: <strong>{serverName}</strong>\n"
+                f"Discord Server ID: <strong>{serverID}</strong>\n")
+
+    elif subject.startswith("Admin Account Access Granted"):
+        heading, serverName, serverID = subject.split(":")
+        subject = heading
+        description = f"You received this email to notify that your Cyberbot Admin Account Access To The Following Discord Server has been Granted by the Server Owner!"
+        note = (f"Discord Server Name: <strong>{serverName}</strong>\n"
+                f"Discord Server ID: <strong>{serverID}</strong>\n"
+                f"NOTE: You can now use following privileged Admin Commands <strong>/admin_log_in, /admin_log_out, /viewing_cyberbot_configuration, /non_monitoring_channel, /cyberbot_config, and /list_supported_formats </strong> in the server!")
 
     # Escape all dynamic data to prevent email HTML markup injection.
     safeSubject = escape(subject, quote=True)
