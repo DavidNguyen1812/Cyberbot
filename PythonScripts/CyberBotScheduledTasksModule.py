@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+
 from CyberBotRuntimeModule import *
 from CyberBotAnalyticsModule import plotBarCharts, plotModelCalls, writingLLMUsageCsv
+from CyberBotSecurityUtilitiesModule import sendEmail
 
 """Getting Current Time Value"""
 ct = time.ctime(time.time()).split()
@@ -12,7 +15,7 @@ if not os.path.exists(f"{LLM_USAGE_LOG}{previousYear}"):
     os.mkdir(f"{LLM_USAGE_LOG}{previousYear}")
 if not os.path.exists(f"{LLM_USAGE_LOG}{previousYear}/{previousMonth}"):
     os.mkdir(f"{LLM_USAGE_LOG}{previousYear}/{previousMonth}")
-    
+
 async def CronTaskLog(logData: str) -> None:
     """
     Description: Logging Cyberbot Cron Task Job Results
@@ -153,6 +156,18 @@ async def checking_member_can_kick_cyberbot():
                     await CronTaskLog(logMessage)
 
 
+@tasks.loop(minutes=30)
+async def reset_current_failed_log_in_attempts():
+    for userID, account in CyberBotConfigData["Admins"].items():
+        account["Failed Log In Attempts"] = 0
+        print(f"Resetting current failed log in attempts counter for account ID {userID}")
+    print("\n\n")
+    async with ConfigLock:
+        async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
+            await file.write(json.dumps(CyberBotConfigData, indent=4))
+    # You can program to write log if you like for this task!
+
+
 @tasks.loop(time=datetime.time(hour=0, minute=0, tzinfo=ZoneInfo("America/New_York")))  # A task every new day
 async def daily_check_for_expired_credential_and_update_llm_usages():
     global previousYear, previousMonth, previousDate
@@ -160,7 +175,7 @@ async def daily_check_for_expired_credential_and_update_llm_usages():
     print("Checking for expired password...")
     ExpiredPasswords = False
     logMessage = ""
-    for account in CyberBotConfigData["Admins"]:
+    for accountID, account in CyberBotConfigData["Admins"].items():
         if time.time() >= account["Credential Expiration Age"]:
             if not ExpiredPasswords:
                 logMessage = (f"# {time.ctime(time.time())}\n\n---\n\n"
@@ -168,15 +183,28 @@ async def daily_check_for_expired_credential_and_update_llm_usages():
                 ExpiredPasswords = True
             print(f"Password for {account['User Email']} expired.")
             logMessage += f"- The Password for Admin Account Associated with the email `{account['User Email']}` Is EXPIRED!\n"
-            try:
-                user = Cyberbot.get_user(account["User ID"])
-                await user.send(f"Your current admin account password has `EXPIRED`\nPlease use command **/request_password_reset_token** and **/change_password** to update your password!")
-                logMessage += f"- Password expire notification WAS SENT to user {user.name} - ID {user.id} via DM channel\n\n---\n\n"
-                print(f"Password expire notification sent to {user.name} - ID {user.id} via DM channel!")
-            except Exception as e:
-                print(f"Error sending expire notification to user DM channel: {e}")
-                logMessage += (f"Error: {e}\n"
-                               f"- Password expire notification CAN NOT BE SENT the user via DM channel\n\n---\n\n")
+            userEmail = account.get("Notification Email", None)
+            user = Cyberbot.get_user(int(accountID))
+            tryDM = False
+            if userEmail:
+                if await asyncio.to_thread(sendEmail, "Cyberbot Admin Account Password Expired", userEmail, user.name) == "Email sent successfully!":
+                    logMessage += f"- Password expire notification WAS SENT to user {user.name} - ID {user.id} via EMAIL\n\n---\n\n"
+                    print(f"Password expire notification sent to {user.name} - ID {user.id} via email!")
+                else:
+                    logMessage += f"- Password expire notification CAN NOT BE SENT the user via EMAIL channel\n"
+                    tryDM = True
+            else:
+                tryDM = True
+            if tryDM:
+                try:
+                    await user.send(f"Your current admin account password has `EXPIRED`\nPlease use command **/request_password_reset_token** and **/change_password** to update your password!")
+                    logMessage += f"- Password expire notification WAS SENT to user {user.name} - ID {user.id} via DM channel\n\n---\n\n"
+                    print(f"Password expire notification sent to {user.name} - ID {user.id} via DM channel!")
+                except Exception as e:
+                    print(f"Error sending expire notification to user DM channel: {e}")
+                    logMessage += (f"DM Notification Error: {e}\n"
+                                   f"- Password expire notification CAN NOT BE SENT the user via DM channel\n\n---\n\n")
+            userEmail = None
     print("Process Finished!\n\n")
     if ExpiredPasswords:
         await CronTaskLog(logMessage)
