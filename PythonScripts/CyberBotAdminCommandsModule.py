@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 from CyberBotRuntimeModule import *
 from CyberBotSecurityUtilitiesModule import CheckPasswordPwned, LoggingApplicationCommand, randomPasswordGenerator, sendEmail
 
@@ -354,8 +352,33 @@ async def adding_admins(ctx, member: discord.Member):
                 admin = CyberBotConfigData["Admins"].get(str(member.id), {})
                 if admin:
                     if ctx.guild.id not in admin["Accessible Servers"]:
-                        try:
-                            await member.send(f"You have been authorized to have a Cyberbot admin account access on server **{ctx.guild.name}** by the server owner **{ctx.user.name}**")
+                        tryDM = False
+                        success = False
+                        userEmail = admin.get("Notification Email", None)
+                        if userEmail:
+                            if await asyncio.to_thread(sendEmail, f"Admin Account Access Granted:{member.guild.name}:{member.guild.id}", userEmail, member.name) != "Email sent successfully!":
+                                tryDM = True
+                            else:
+                                success = True
+                        else:
+                            tryDM = True
+                        if tryDM:
+                            print("Deez Nut!")
+                            try:
+                                await member.send(f"You have been authorized to have a Cyberbot admin account access on server **{ctx.guild.name}** by the server owner\n"
+                                                  f"You can now use the following privileged Admin Commands:\n"
+                                                  f"**/admin_log_in**\n"
+                                                  f"**/admin_log_out**\n"
+                                                  f"**/viewing_cyberbot_configuration**\n"
+                                                  f"**/non_monitoring_channel**\n"
+                                                  f"**/cyberbot_config**\n"
+                                                  f"**/list_supported_formats**")
+                                success = True
+                            except Exception as e:
+                                await ctx.followup.send(f"Cyberbot can't register {member.name} admin account!")
+                                print(f"Error sending DM message to {member.name}\n\n")
+                                await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> {member.name}", f"Denied/Error sending notification {e}")
+                        if success:
                             admin["Accessible Servers"].append(ctx.guild.id)
                             async with ConfigLock:
                                 async with aiofiles.open(CYBERBOT_CONFIG, "w") as file:
@@ -363,12 +386,8 @@ async def adding_admins(ctx, member: discord.Member):
                             await ctx.followup.send(f"{member.name} admin account can now be used in server {ctx.guild.name}")
                             print(f"{member.name} admin access to server {ctx.guild.name} added!\n\n")
                             await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} added!")
-                        except Exception as e:
-                            await ctx.followup.send(f"Cyberbot can't register {member.name} admin account!")
-                            print(f"Error sending DM message to {member.name}\n\n")
-                            await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> {member.name}", f"Denied/Error sending notification {e}")
                     else:
-                        await LoggingApplicationCommand(ctx.user.name, "/adding_admins", f"member -> {member.name}", f"Denied/Admin account already has access to server {ctx.guild.name} ID {ctx.guild.id}")
+                        await LoggingApplicationCommand(ctx, "/adding_admins", f"member -> {member.name}", f"Denied/Admin account already has access to server {ctx.guild.name} ID {ctx.guild.id}")
                         await ctx.followup.send(f"{member.name} admin account already has access to the server!")
                         print(f"{member.name} admin account already has access to the server!\n\n")
                 else:
@@ -406,12 +425,23 @@ async def removing_admins(ctx, member: discord.Member):
                     print(f"{member.name} admin account already has no access to the server!\n\n")
                     await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Denied/Admin account already has no access to server {ctx.guild.name} ID {ctx.guild.id}")
                 else:
-                    try:
-                        await member.send(f"Your admin account access on server **{ctx.guild.name}** ID **{ctx.guild.id}** has been removed by the server owner **{ctx.user.name}**")
-                        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} removed!")
-                    except Exception as e:
-                        print(f"Error sending DM to {member.name}\n\n")
-                        await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} removed! Cyberbot, however, can not send DM to user!")
+                    tryDM = False
+                    userEmail = admin.get("Notification Email", None)
+                    if userEmail:
+                        if await asyncio.to_thread(sendEmail, f"Admin Account Access Revoke:Owner Revoked:{member.guild.name}:{member.guild.id}", userEmail, member.name) != "Email sent successfully!":
+                            tryDM = True
+                        else:
+                            await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} removed!")
+                    else:
+                        tryDM = True
+                    if tryDM:
+                        print("Deez Nut!")
+                        try:
+                            await member.send(f"Your admin account access on server **{ctx.guild.name}** ID **{ctx.guild.id}** has been removed by the server owner **{ctx.user.name}**")
+                            await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} removed!")
+                        except Exception as e:
+                            print(f"Error sending DM to {member.name} - {e}\n\n")
+                            await LoggingApplicationCommand(ctx, "/removing_admins", f"member -> {member.name}", f"Approved/Access to the server {ctx.guild.name} ID {ctx.guild.id} for Admin User Account {member.id} removed! Cyberbot, however, can not send DM to user!")
                     admin["Accessible Servers"].remove(ctx.guild.id)
                     if admin["Current Admin Session Period"].get(str(ctx.guild.id)):
                         del admin["Current Admin Session Period"][str(ctx.guild.id)]
