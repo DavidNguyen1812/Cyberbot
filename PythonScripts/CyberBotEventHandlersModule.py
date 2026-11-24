@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from CyberBotRuntimeModule import *
 from CyberBotScanOrchestrationModule import CyberBotScan
-from CyberBotScheduledTasksModule import checking_expired_tokens, checking_member_can_kick_cyberbot, daily_check_for_expired_credential_and_update_llm_usages
+from CyberBotScheduledTasksModule import checking_expired_tokens, checking_member_can_kick_cyberbot, daily_check_for_expired_credential_and_update_llm_usages, reset_current_failed_log_in_attempts
+
 
 @Cyberbot.event
 async def on_ready():
@@ -22,6 +23,7 @@ async def on_ready():
     checking_expired_tokens.start()
     daily_check_for_expired_credential_and_update_llm_usages.start()
     checking_member_can_kick_cyberbot.start()
+    reset_current_failed_log_in_attempts.start()
 
 
 @Cyberbot.event
