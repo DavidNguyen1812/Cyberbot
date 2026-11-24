@@ -28,7 +28,10 @@ def sendEmail(subject: str, receiver_email: str, user_discord_name: str, otp: st
     email = EmailMessage()
     email["From"] = sender_email
     email["To"] = receiver_email
-    email["Subject"] = subject
+    if subject.startswith(("Admin Account Locked Down", "Admin Account Access Revoke", "Admin Account Access Granted")):
+        email["Subject"] = subject.split(":")[0]
+    else:
+        email["Subject"] = subject
 
     # Add body to email
     try:
@@ -53,7 +56,7 @@ def sendEmail(subject: str, receiver_email: str, user_discord_name: str, otp: st
         with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as server:
             server.login(sender_email, GMAIL_CRED)
             server.send_message(email)
-        print(f"[Cyberbot Email System] Automation Email sent to {receiver_email} succesfully!")
+        print(f"[Cyberbot Email System] Automation Email sent to {receiver_email} successfully!")
         return "Email sent successfully!"
 
     except smtplib.SMTPRecipientsRefused as clientError:
