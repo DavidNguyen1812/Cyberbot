@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 from CyberBotRuntimeModule import *
 from CyberBotAnalyticsModule import plotBarCharts, plotModelCalls, writingLLMUsageCsv
 from CyberBotSecurityUtilitiesModule import sendEmail
@@ -128,32 +126,36 @@ async def checking_member_can_kick_cyberbot():
         for serverID in account["Accessible Servers"]:
             guild = Cyberbot.get_guild(serverID)
             member = guild.get_member(int(userID))
-            if guild.me.top_role.position < member.top_role.position and member.id != guild.owner.id:
-                print(f"Member {member.name} can kick Cyberbot from server {guild.name} ID {serverID}.")
-                logMessage = (f"# {time.ctime(time.time())}\n\n---\n\n"
-                                  f"## Detected A Server Member Can Kick Cyberbot\n"
-                                  f"- **Member:** `{member.name}`\n"
-                                  f"- **User ID:** `{member.id}`\n"
-                                  f"- **From Server:** `{guild.name}`\n"
-                                  f"- **Server ID:** `{serverID}`\n")
-                try:
-                    await guild.owner.send(f"# WARNING\n"
-                                           f"- **Member:** `{member.name}`\n"
-                                           f"- **User ID:** `{member.id}`\n"
-                                           f"- **From Server:** `{guild.name}`\n"
-                                           f"- **Server ID:** `{serverID}`\n"
-                                           f"- **WARNING REASON:** `Member can kick Cyberbot out of server, hence, prevent Cyberbot from protecting the server against malware!`\n"
-                                           f"- **RECOMMENDATION:** `Please make sure Cyberbot has a higher role than all the members in the server.`")
-                    logMessage += f"**Warning WAS SENT to the server owner {guild.owner.name} - ID {guild.owner.id}**\n\n---\n\n"
-                    print("Warning was sent to the server owner!")
-                except Exception as e:
-                    print(f"Error: {e}")
-                    print("Warning can not be sent to the server owner!")
-                    logMessage += (f"Error: {e}\n"
-                                   f"**Warning CAN NOT BE SENT to the server owner {guild.owner.name} - ID {guild.owner.id}**\n\n---\n\n")
-                finally:
-                    print("\n\n")
-                    await CronTaskLog(logMessage)
+            try:
+                if guild.me.top_role.position < member.top_role.position and member.id != guild.owner.id:
+                    print(f"Member {member.name} can kick Cyberbot from server {guild.name} ID {serverID}.")
+                    logMessage = (f"# {time.ctime(time.time())}\n\n---\n\n"
+                                      f"## Detected A Server Member Can Kick Cyberbot\n"
+                                      f"- **Member:** `{member.name}`\n"
+                                      f"- **User ID:** `{member.id}`\n"
+                                      f"- **From Server:** `{guild.name}`\n"
+                                      f"- **Server ID:** `{serverID}`\n")
+                    try:
+                        await guild.owner.send(f"# WARNING\n"
+                                               f"- **Member:** `{member.name}`\n"
+                                               f"- **User ID:** `{member.id}`\n"
+                                               f"- **From Server:** `{guild.name}`\n"
+                                               f"- **Server ID:** `{serverID}`\n"
+                                               f"- **WARNING REASON:** `Member can kick Cyberbot out of server, hence, prevent Cyberbot from protecting the server against malware!`\n"
+                                               f"- **RECOMMENDATION:** `Please make sure Cyberbot has a higher role than all the members in the server.`")
+                        logMessage += f"**Warning WAS SENT to the server owner {guild.owner.name} - ID {guild.owner.id}**\n\n---\n\n"
+                        print("Warning was sent to the server owner!")
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        print("Warning can not be sent to the server owner!")
+                        logMessage += (f"Error: {e}\n"
+                                       f"**Warning CAN NOT BE SENT to the server owner {guild.owner.name} - ID {guild.owner.id}**\n\n---\n\n")
+                    finally:
+                        print("\n\n")
+                        await CronTaskLog(logMessage)
+            except AttributeError:
+                # The member left or kicked out of server at the time this task checking
+                pass
 
 
 @tasks.loop(minutes=30)
