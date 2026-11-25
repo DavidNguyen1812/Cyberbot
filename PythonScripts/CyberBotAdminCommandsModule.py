@@ -22,8 +22,8 @@ async def create_admin_account(ctx, user_email: str):
     emailTaken = False
     adminAccount = CyberBotConfigData["Admins"].get(str(ctx.user.id), None)
     if not adminAccount:
-        for adminID in CyberBotConfigData["Admins"].keys():
-            if CyberBotConfigData["Admins"][adminID]["User Email"] == emailSHA512Hash:
+        for adminID, account in CyberBotConfigData["Admins"].items():
+            if account["User Email"] == emailSHA512Hash:
                 user = Cyberbot.get_user(int(adminID))
                 await asyncio.to_thread(sendEmail, "Security Notice: Attempt Admin Account Creation", user_email, user.name)
                 emailTaken = True
