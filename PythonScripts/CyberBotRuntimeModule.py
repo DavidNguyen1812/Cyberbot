@@ -73,7 +73,7 @@ from aiocsv import AsyncWriter
 from zoneinfo import ZoneInfo
 from email_validator import validate_email, EmailNotValidError
 from google.genai import types, errors
-from google.genai.types import HttpOptions
+from google.genai.types import HttpOptions, HttpRetryOptions
 from google.genai.errors import APIError
 from httpx import ConnectTimeout
 from contextlib import asynccontextmanager
@@ -243,4 +243,4 @@ LLM_MODEL_INFORMATION = {
 assert OPENAI_LLM_MODEL_FOR_SCAT.startswith('gpt')
 assert GEMINI_LLM_MODEL_FOR_SCAT.startswith('gemini')
 OPENAI_LLM_ENGINE = AsyncOpenAI(timeout=300, max_retries=0) # We will handle the retry logic on own own)
-GEMINI_LLM_ENGINE = genai.Client(http_options=HttpOptions(timeout=300000, api_version='v1beta'))
+GEMINI_LLM_ENGINE = genai.Client(http_options=HttpOptions(timeout=300000, api_version='v1beta', retry_options=HttpRetryOptions(attempts=0)))
