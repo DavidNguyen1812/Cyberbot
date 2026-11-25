@@ -92,6 +92,7 @@ A Python-based security scanner designed for continuous, automated threat monito
 | torch | `>= `2.11.0` | https://pytorch.org |
 | email-validator | `>= `2.3.0` | https://github.com/JoshData/python-email-validator |
 | bcrypt | `>= `5.0.0` | https://pypi.org/project/bcrypt/ |
+| pypdf | `>= `7.1.0` | https://pypi.org/project/pypdf/ |
 
 | System Binary | Version | Source |
 |---|---|---|
